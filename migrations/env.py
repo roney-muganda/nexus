@@ -40,9 +40,14 @@ def run_migrations_online() -> None:
 
     load_dotenv()
 
-    db_url = os.getenv("DATABASE_URL", "").replace(
-        "postgresql+asyncpg://", "postgresql://"
-    )
+    raw_url = os.getenv("DATABASE_URL")
+    if raw_url:
+        db_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
+    else:
+        db_url = config.get_main_option("sqlalchemy.url")
+
+    if not db_url:
+        raise RuntimeError("No database URL found in DATABASE_URL or alembic.ini")
 
     connectable = create_engine(db_url, poolclass=pool.NullPool)
 
