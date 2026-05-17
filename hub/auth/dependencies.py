@@ -39,7 +39,7 @@ async def get_current_user(
     return user
 
 
-async def get_current_user_with_scope(required_scope: str):
+def require_scope(required_scope: str):
     async def _check(
         credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
         db: AsyncSession = Depends(get_db)
