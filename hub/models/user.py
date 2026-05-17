@@ -19,6 +19,6 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # relationships
-    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="user", lazy="dynamic")
-    preferences: Mapped["UserPreferences"] = relationship("UserPreferences", back_populates="user", uselist=False)
-    memories: Mapped[list["MemoryContext"]] = relationship("MemoryContext", back_populates="user", lazy="dynamic")
+    tasks: Mapped[list["Task"]] = relationship("Task", back_populates="user", lazy="selectin")
+preferences: Mapped["UserPreferences"] = relationship("UserPreferences", back_populates="user", uselist=False, lazy="selectin")
+memories: Mapped[list["MemoryContext"]] = relationship("MemoryContext", back_populates="user", lazy="selectin")
