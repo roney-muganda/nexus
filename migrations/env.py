@@ -40,7 +40,6 @@ def run_migrations_online() -> None:
 
     load_dotenv()
 
-    # prefer DATABASE_URL from .env, fall back to alembic.ini
     raw_url = os.getenv("DATABASE_URL")
     if raw_url:
         db_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -59,3 +58,9 @@ def run_migrations_online() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
