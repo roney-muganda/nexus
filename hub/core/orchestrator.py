@@ -1,0 +1,153 @@
+import json
+import uuid
+import time
+from groq import Groq
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from hub.config import settings
+from hub.core.context_builder import build_context, SYSTEM_PROMPT
+from hub.core.tool_schemas import TOOL_SCHEMAS
+from hub.core.tool_dispatcher import ToolDispatcher
+from hub.models.conversation_turn import ConversationTurn, TurnRole
+
+
+class Orchestrator:
+    def __init__(self, db: AsyncSession, user_id: str):
+        self.db = db
+        self.user_id = user_id
+        self.dispatcher = ToolDispatcher(db, user_id)
+        self.client = Groq(api_key=settings.groq_api_key)
+        self.model = "llama-3.3-70b-versatile"
+
+    def _build_tools(self) -> list:
+        tools = []
+        for schema in TOOL_SCHEMAS:
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": schema["name"],
+                    "description": schema["description"],
+                    "parameters": schema["parameters"]
+                }
+            })
+        return tools
+
+    async def run(
+        self,
+        user_message: str,
+        session_id: str,
+        device: str = "web"
+    ) -> str:
+        start_time = time.time()
+
+        await self._save_turn(session_id, TurnRole.user, user_message, device)
+
+        history = await self._load_history(session_id)
+
+        # build messages list
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
+
+        tools = self._build_tools()
+        tool_calls_made = 0
+        max_tool_calls = 3
+        final_response = ""
+
+        while True:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=8192,
+                temperature=0.7,
+            )
+
+            message = response.choices[0].message
+
+            # check for tool calls
+            if message.tool_calls and tool_calls_made < max_tool_calls:
+                # add assistant message with tool calls to history
+                messages.append({
+                    "role": "assistant",
+                    "content": message.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        }
+                        for tc in message.tool_calls
+                    ]
+                })
+
+                # execute each tool and add results
+                for tc in message.tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        args = {}
+
+                    result = await self.dispatcher.execute(tc.function.name, args)
+                    tool_calls_made += 1
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result
+                    })
+
+                continue
+
+            # no tool calls — final response
+            final_response = message.content or ""
+            break
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        await self._save_turn(
+            session_id, TurnRole.assistant,
+            final_response, device, latency_ms=latency_ms
+        )
+        await self.db.commit()
+        return final_response
+
+    async def _load_history(self, session_id: str) -> list[dict]:
+        result = await self.db.execute(
+            select(ConversationTurn)
+            .where(ConversationTurn.session_id == uuid.UUID(session_id))
+            .order_by(ConversationTurn.created_at)
+            .limit(20)
+        )
+        turns = result.scalars().all()
+        history = []
+        for turn in turns:
+            role = "user" if turn.role == TurnRole.user else "assistant"
+            if turn.content:
+                history.append({
+                    "role": role,
+                    "content": turn.content
+                })
+        return history
+
+    async def _save_turn(
+        self,
+        session_id: str,
+        role: TurnRole,
+        content: str,
+        device: str,
+        latency_ms: int = None
+    ):
+        turn = ConversationTurn(
+            session_id=uuid.UUID(session_id),
+            user_id=uuid.UUID(self.user_id),
+            role=role,
+            content=content,
+            device=device,
+            latency_ms=latency_ms
+        )
+        self.db.add(turn)
+        await self.db.flush()
