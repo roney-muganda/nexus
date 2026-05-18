@@ -40,8 +40,6 @@ class Orchestrator:
     ) -> str:
         start_time = time.time()
 
-        await self._save_turn(session_id, TurnRole.user, user_message, device)
-
         history = await self._load_history(session_id)
 
         # build messages list
@@ -49,8 +47,10 @@ class Orchestrator:
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 
+        await self._save_turn(session_id, TurnRole.user, user_message, device)
+
         tools = self._build_tools()
-        tool_calls_made = 0
+        tool_calls_made = 0 
         max_tool_calls = 3
         final_response = ""
 
@@ -118,7 +118,10 @@ class Orchestrator:
     async def _load_history(self, session_id: str) -> list[dict]:
         result = await self.db.execute(
             select(ConversationTurn)
-            .where(ConversationTurn.session_id == uuid.UUID(session_id))
+            .where(
+                ConversationTurn.session_id == uuid.UUID(session_id),
+                ConversationTurn.user_id == uuid.UUID(self.user_id)
+                )
             .order_by(ConversationTurn.created_at)
             .limit(20)
         )
