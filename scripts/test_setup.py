@@ -123,6 +123,28 @@ except Exception as e:
     print(f"      ✗ Failed — {e}")
 print()
 
+# ── Test 7: Embeddings ─────────────────────────────
+print("[ 7 ] Testing embedding model...")
+try:
+    from hub.memory.embedder import embed_text
+    embedding = embed_text("test sentence for embedding")
+    print(f"      ✓ Embedding generated — dimensions: {len(embedding)}")
+except Exception as e:
+    print(f"      ✗ Failed — {e}")
+print()
+
+# ── Test 8: Memory Manager ─────────────────────────
+print("[ 8 ] Testing memory collection access...")
+try:
+    from hub.memory.chroma_client import get_or_create_collection, MEMORY_COLLECTION
+    col = get_or_create_collection(MEMORY_COLLECTION)
+    count = col.count()
+    print(f"      ✓ Memory collection accessible")
+    print(f"      ✓ Stored memories: {count}")
+except Exception as e:
+    print(f"      ✗ Failed — {e}")
+print()
+
 
 # ── Summary ────────────────────────────────────────
 print("="*50)

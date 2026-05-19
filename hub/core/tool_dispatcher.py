@@ -2,7 +2,8 @@ import json
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from hub.models.task import Task, TaskStatus
-from hub.models.memory_context import MemoryContext, MemoryType
+from hub.memory.manager import MemoryManager
+from hub.models.memory_context import MemoryType
 import uuid
 
 
@@ -63,44 +64,48 @@ class ToolDispatcher:
         return {"status": "saved", "task_id": str(task.id), "title": task.title}
 
     async def _store_memory(self, args: dict) -> dict:
-        chroma_id = str(uuid.uuid4())
-        memory = MemoryContext(
-            user_id=self.user_id,
-            chroma_id=chroma_id,
+        importance_map = {
+            "fact": 0.6,
+            "preference": 0.8,
+            "skill": 0.7,
+            "event": 0.5,
+            "relationship": 0.8,
+            "learning": 0.7,
+        }
+        memory_type = args["memory_type"]
+        importance = importance_map.get(memory_type, 0.5)
+        manager = MemoryManager(db=self.db, user_id=self.user_id)
+        chroma_id = await manager.store(
             content=args["content"],
-            memory_type=MemoryType(args["memory_type"]),
-            importance=0.5,
+            memory_type=MemoryType(memory_type),
+            importance=importance,
             tags=args.get("tags", []),
-            source="assistant"
+            source="user_stated"
         )
-        self.db.add(memory)
-        await self.db.flush()
         return {"status": "stored", "memory_id": chroma_id}
 
     async def _store_learning(self, args: dict) -> dict:
         content = f"{args['concept']}: {args['explanation']}"
-        chroma_id = str(uuid.uuid4())
-        memory = MemoryContext(
-            user_id=self.user_id,
-            chroma_id=chroma_id,
+        manager = MemoryManager(db=self.db, user_id=self.user_id)
+        chroma_id = await manager.store(
             content=content,
             memory_type=MemoryType.learning,
-            importance=float(0.7),
+            importance=0.7,
             tags=[args["domain"], "learning"],
             source=args.get("source", "user")
         )
-        self.db.add(memory)
-        await self.db.flush()
-        return {"status": "stored", "concept": args["concept"], "domain": args["domain"]}
+        return {
+            "status": "stored",
+            "memory_id": chroma_id,
+            "concept": args["concept"],
+            "domain": args["domain"]
+        }
 
     async def _search_technical_docs(self, args: dict) -> dict:
-        # stub — will connect to ChromaDB in Task 4
-        return {"results": [], "message": "Doc search not yet implemented — coming in Task 4"}
+        return {"results": [], "message": "Doc search coming in Task 4"}
 
     async def _execute_terminal_command(self, args: dict) -> dict:
-        # stub — will connect to Desktop spoke in Task 10
-        return {"status": "pending", "message": "Desktop spoke not yet connected — coming in Task 10"}
+        return {"status": "pending", "message": "Desktop spoke coming in Task 10"}
 
     async def _web_search_and_summarize(self, args: dict) -> dict:
-        # stub — will connect to search API in Task 8
-        return {"status": "pending", "message": "Web search not yet implemented — coming in Task 8"}
+        return {"status": "pending", "message": "Web search coming in Task 8"}

@@ -9,6 +9,8 @@ from hub.core.context_builder import build_context, SYSTEM_PROMPT
 from hub.core.tool_schemas import TOOL_SCHEMAS
 from hub.core.tool_dispatcher import ToolDispatcher
 from hub.models.conversation_turn import ConversationTurn, TurnRole
+from hub.memory.manager import MemoryManager
+from hub.models.memory_context import MemoryType
 
 
 class Orchestrator:
@@ -41,9 +43,24 @@ class Orchestrator:
         start_time = time.time()
 
         history = await self._load_history(session_id)
+        memory_manager=MemoryManager(db=self.db, user_id=self.user_id)
+        memories = await memory_manager.retrieve(user_message, top_k=5)
 
-        # build messages list
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        if memories:
+            memory_block = "\n".join([
+                f"- [{m['type']}] {m['content']}"
+                for m in memories
+            ])
+            messages.append({
+                "role": "user",
+                "content": f"[MEMORY CONTEXT]\n{memory_block}"
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "Memory context loaded."
+            })        
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 
