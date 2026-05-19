@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Gemini
     gemini_api_key: str
 
+    groq_api_key: str = ""
+
     # Telegram
     telegram_bot_token: str
 
