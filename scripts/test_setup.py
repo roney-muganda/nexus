@@ -126,8 +126,9 @@ print()
 # ── Test 7: Embeddings ─────────────────────────────
 print("[ 7 ] Testing embedding model...")
 try:
+    import asyncio
     from hub.memory.embedder import embed_text
-    embedding = embed_text("test sentence for embedding")
+    embedding = asyncio.run(embed_text("test sentence for embedding"))
     print(f"      ✓ Embedding generated — dimensions: {len(embedding)}")
 except Exception as e:
     print(f"      ✗ Failed — {e}")
