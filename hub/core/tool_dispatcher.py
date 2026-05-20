@@ -7,6 +7,7 @@ from hub.models.memory_context import MemoryType
 import uuid
 from hub.tools.developer.project_context import get_project_context
 from hub.tools.developer.search_docs import search_technical_docs
+from hub.tools.student.review_quiz import generate_review_quiz, get_learning_summary
 
 
 class ToolDispatcher:
@@ -24,6 +25,8 @@ class ToolDispatcher:
             "store_learning":           self._store_learning,
             "web_search_and_summarize": self._web_search_and_summarize,
             "get_project_context":      self._get_project_context,
+            "generate_review_quiz": self._generate_review_quiz,
+            "get_learning_summary": self._get_learning_summary,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -118,6 +121,22 @@ class ToolDispatcher:
             project_name=args.get("project_name"),
             project_id=args.get("project_id"),
         )
+
+    async def _generate_review_quiz(self, args: dict) -> dict:
+        return await generate_review_quiz(
+            db=self.db,
+            user_id=self.user_id,
+            domain=args.get("domain"),
+            num_questions=args.get("num_questions", 5),
+    )
+
+    async def _get_learning_summary(self, args: dict) -> dict:
+        return await get_learning_summary(
+            db=self.db,
+            user_id=self.user_id,
+            domain=args.get("domain"),
+            days=args.get("days", 7),
+    )
 
     async def _execute_terminal_command(self, args: dict) -> dict:
         return {"status": "pending", "message": "Desktop spoke coming in Task 10"}
