@@ -120,5 +120,23 @@ TOOL_SCHEMAS = [
             },
             "required": ["query"]
         }
+    },
+    {
+        "name": "get_project_context",
+        "description": "Retrieves the current state of a project including tasks, blockers, overdue items and recent completions. Use when the user asks about a project or wants to know what to work on next.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Name of the project to look up"
+                },
+                "project_id": {
+                    "type": "string",
+                    "description": "UUID of the project if known"
+                }
+            },
+            "required": []
+        }
     }
 ]

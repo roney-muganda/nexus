@@ -33,3 +33,11 @@ class Task(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="tasks")
+
+    project: Mapped["Project"] = relationship(
+        "Project", back_populates="tasks", lazy="selectin"
+    )
+
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True, index=True
+    )

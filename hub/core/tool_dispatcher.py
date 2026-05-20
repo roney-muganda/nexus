@@ -5,6 +5,8 @@ from hub.models.task import Task, TaskStatus
 from hub.memory.manager import MemoryManager
 from hub.models.memory_context import MemoryType
 import uuid
+from hub.tools.developer.project_context import get_project_context
+from hub.tools.developer.search_docs import search_technical_docs
 
 
 class ToolDispatcher:
@@ -21,6 +23,7 @@ class ToolDispatcher:
             "store_memory":             self._store_memory,
             "store_learning":           self._store_learning,
             "web_search_and_summarize": self._web_search_and_summarize,
+            "get_project_context":      self._get_project_context,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -102,7 +105,19 @@ class ToolDispatcher:
         }
 
     async def _search_technical_docs(self, args: dict) -> dict:
-        return {"results": [], "message": "Doc search coming in Task 4"}
+        return await search_technical_docs(
+            query=args["query"],
+            sources=args.get("sources"),
+            top_k=args.get("top_k", 5),
+        )
+
+    async def _get_project_context(self, args: dict) -> dict:
+        return await get_project_context(
+            db=self.db,
+            user_id=self.user_id,
+            project_name=args.get("project_name"),
+            project_id=args.get("project_id"),
+        )
 
     async def _execute_terminal_command(self, args: dict) -> dict:
         return {"status": "pending", "message": "Desktop spoke coming in Task 10"}
