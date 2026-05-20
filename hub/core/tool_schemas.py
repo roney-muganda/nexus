@@ -138,5 +138,43 @@ TOOL_SCHEMAS = [
             },
             "required": []
         }
-    }
+    },
+    {
+        "name": "generate_review_quiz",
+        "description": "Generates a quiz from the user's stored learning notes for spaced repetition review. Use when the user wants to test themselves or review what they have studied.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "enum": ["software", "civil-engineering", "general"],
+                    "description": "Knowledge domain to quiz on. Omit to quiz across all domains."
+                },
+                "num_questions": {
+                    "type": "integer",
+                    "description": "Number of quiz questions to generate, default 5"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_learning_summary",
+        "description": "Returns a summary of what the user has studied recently, grouped by domain. Use when asked what they have been learning or studying.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string",
+                    "enum": ["software", "civil-engineering", "general"],
+                    "description": "Filter by domain. Omit for all domains."
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "How many days back to look, default 7"
+                }
+            },
+            "required": []
+        }
+    },
 ]
