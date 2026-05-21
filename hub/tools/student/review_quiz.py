@@ -17,24 +17,26 @@ async def generate_review_quiz(
     domain: str = None,
     num_questions: int = 5,
 ) -> dict:
-    # fetch learning memories not accessed in the last 3 days
     cutoff = datetime.now(timezone.utc) - timedelta(days=3)
 
+    conditions = [
+        MemoryContext.user_id == user_id,
+        MemoryContext.memory_type == MemoryType.learning,
+        (MemoryContext.last_accessed_at == None) |
+        (MemoryContext.last_accessed_at < cutoff),
+    ]
+
+    if domain:
+        conditions.append(MemoryContext.tags.contains([domain.lower()]))
+
     query = select(MemoryContext).where(
-        and_(
-            MemoryContext.user_id == user_id,
-            MemoryContext.memory_type == MemoryType.learning,
-        )
-    ).order_by(MemoryContext.last_accessed_at.asc().nullsfirst()).limit(20)
+        and_(*conditions)
+    ).order_by(
+        MemoryContext.last_accessed_at.asc().nullsfirst()
+    ).limit(num_questions)
 
     result = await db.execute(query)
     memories = result.scalars().all()
-
-    if domain:
-        memories = [
-            m for m in memories
-            if domain.lower() in [t.lower() for t in (m.tags or [])]
-        ]
 
     if not memories:
         return {
@@ -43,17 +45,11 @@ async def generate_review_quiz(
                        f"Start storing things you learn using store_learning."
         }
 
-    # pick the ones least recently accessed
-    candidates = memories[:num_questions]
-    concepts = [m.content for m in candidates]
-    chroma_ids = [m.chroma_id for m in candidates]
+    concepts = [m.content for m in memories]
 
-    # use LLM to generate quiz questions from the concepts
     client = Groq(api_key=settings.groq_api_key)
-
     concepts_text = "\n".join([f"{i+1}. {c}" for i, c in enumerate(concepts)])
     prompt = f"""You are a study assistant helping someone review what they have learned.
-
 Based on these learning notes, generate {num_questions} quiz questions.
 For each question provide: the question, the correct answer, and a brief explanation.
 
@@ -77,9 +73,8 @@ Q2: [question]
 
     quiz_text = response.choices[0].message.content
 
-    # update access time for reviewed memories
     now = datetime.now(timezone.utc)
-    for memory in candidates:
+    for memory in memories:
         memory.last_accessed_at = now
         memory.access_count = (memory.access_count or 0) + 1
     await db.flush()
@@ -87,11 +82,10 @@ Q2: [question]
     return {
         "status": "ready",
         "domain": domain or "all",
-        "num_questions": len(candidates),
+        "num_questions": len(memories),
         "quiz": quiz_text,
         "concepts_reviewed": [c[:80] + "..." if len(c) > 80 else c for c in concepts],
     }
-
 
 async def get_learning_summary(
     db: AsyncSession,
