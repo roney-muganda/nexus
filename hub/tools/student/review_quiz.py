@@ -27,7 +27,11 @@ async def generate_review_quiz(
     ]
 
     if domain:
-        conditions.append(MemoryContext.tags.contains([domain.lower()]))
+        from sqlalchemy import func
+        conditions.append(
+            func.lower(func.array_to_string(MemoryContext.tags, ','))
+            .contains(domain.lower())
+    )
 
     query = select(MemoryContext).where(
         and_(*conditions)
