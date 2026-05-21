@@ -27,10 +27,10 @@ async def generate_review_quiz(
     ]
 
     if domain:
-        from sqlalchemy import func
+        from sqlalchemy import func, text
         conditions.append(
-            func.lower(func.array_to_string(MemoryContext.tags, ','))
-            .contains(domain.lower())
+            text("lower(:domain) = ANY(SELECT lower(unnest(tags)))")
+            .bindparams(domain=domain)
     )
 
     query = select(MemoryContext).where(
