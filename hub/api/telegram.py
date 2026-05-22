@@ -1,6 +1,7 @@
+import os
 import logging
 import uuid
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Header, status
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,7 +69,19 @@ async def get_session_id_for_chat(telegram_chat_id: int) -> str:
 
 
 @router.post("/webhook")
-async def telegram_webhook(request: Request):
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None)
+):
+    # 1. Webhook Authentication to prevent forged arbitrary requests
+    secret_token = os.getenv("TELEGRAM_SECRET_TOKEN")
+    if secret_token and x_telegram_bot_api_secret_token != secret_token:
+        logger.warning("Rejected Telegram webhook: Secret token mismatch.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Unauthorized webhook request"
+        )
+
     try:
         data = await request.json()
     except Exception:
@@ -86,7 +99,7 @@ async def telegram_webhook(request: Request):
     username = message.from_user.username
     full_name = message.from_user.full_name
 
-    # handle commands
+    # handle stateless commands early
     if text.startswith("/start"):
         await telegram_app.bot.send_message(
             chat_id=chat_id,
@@ -125,15 +138,7 @@ async def telegram_webhook(request: Request):
         )
         return {"ok": True}
 
-    if text.startswith("/new"):
-        # force a new conversation session
-        await telegram_app.bot.send_message(
-            chat_id=chat_id,
-            text="Starting a fresh conversation. What's up?"
-        )
-        return {"ok": True}
-
-    # send typing indicator
+    # send typing indicator for processing operations
     await telegram_app.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     async with AsyncSessionLocal() as db:
@@ -147,6 +152,20 @@ async def telegram_webhook(request: Request):
 
             session_id = await get_session_id_for_chat(chat_id)
             orchestrator = Orchestrator(db=db, user_id=str(user.id))
+
+            # 2. Stateful command: Actually wipe the session history
+            if text.startswith("/new"):
+                # Call the clear method on your Orchestrator or memory manager 
+                if hasattr(orchestrator, "clear_session"):
+                    await orchestrator.clear_session(session_id)
+                elif hasattr(orchestrator, "memory") and hasattr(orchestrator.memory, "clear"):
+                    await orchestrator.memory.clear(session_id)
+                
+                await telegram_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="🔄 Starting a fresh conversation. What's up?"
+                )
+                return {"ok": True}
 
             reply = await orchestrator.run(
                 user_message=text,
