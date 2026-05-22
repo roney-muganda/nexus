@@ -34,6 +34,21 @@ class Orchestrator:
             })
         return tools
 
+    async def clear_session(self, session_id: str) -> None:
+        """Deletes all conversation history for a given session to start fresh."""
+        try:
+            stmt = delete(ConversationTurn).where(
+                ConversationTurn.session_id == uuid.UUID(session_id),
+                ConversationTurn.user_id == uuid.UUID(self.user_id)
+            )
+            await self.db.execute(stmt)
+            await self.db.commit()
+            logger.info(f"Successfully cleared conversation turns for session {session_id}")
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Failed to clear session history for {session_id}: {e}")
+            raise e
+
     async def run(
         self,
         user_message: str,
