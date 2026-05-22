@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, func, Enum as SAEnum
+from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, func, Enum as SAEnum, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 import enum
@@ -30,5 +30,5 @@ class UserPreferences(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="preferences")
     telegram_chat_id: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, index=True
+        BigInteger, nullable=True, index=True
     )
