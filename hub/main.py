@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from hub.config import settings
-from hub.api import auth, tasks, memory, chat, websocket
+from hub.api import auth, tasks, memory, chat, websocket, telegram
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +35,7 @@ app.include_router(tasks.router,     prefix="/api/tasks",   tags=["tasks"])
 app.include_router(memory.router,    prefix="/api/memory",  tags=["memory"])
 app.include_router(chat.router,      prefix="/api/chat",    tags=["chat"])
 app.include_router(websocket.router, prefix="/ws",          tags=["websocket"])
+app.include_router(telegram.router, prefix="/api/telegram", tags=["telegram"])
 
 @app.get("/health")
 async def health_check():

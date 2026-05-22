@@ -29,3 +29,6 @@ class UserPreferences(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="preferences")
+    telegram_chat_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
