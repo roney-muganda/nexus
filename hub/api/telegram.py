@@ -1,7 +1,8 @@
 import logging
 import uuid
+import os
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Header, status
 from telegram import Update, Bot
 from telegram.ext import Application
 from sqlalchemy import select, update
@@ -56,7 +57,7 @@ async def telegram_webhook(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Unauthorized webhook request"
         )
-        
+
     try:
         data = await request.json()
     except Exception:
