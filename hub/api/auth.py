@@ -2,7 +2,7 @@ import random
 import string
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from pydantic import BaseModel, EmailStr
 from hub.models.database import get_db
 from datetime import datetime, timezone, timedelta
@@ -95,7 +95,6 @@ async def generate_telegram_link_code(
     current_user: User = Depends(get_current_user)
 ):
     # invalidate any existing unused codes for this user
-    from sqlalchemy import update
     await db.execute(
         update(TelegramLink)
         .where(
@@ -105,8 +104,20 @@ async def generate_telegram_link_code(
         .values(used=True)
     )
 
-    # generate a new 6-digit code
-    code = "".join(random.choices(string.digits, k=6))
+    # generate a unique 6-digit code with collision handling
+    max_retries = 5
+    for _ in range(max_retries):
+        code = "".join(random.choices(string.digits, k=6))
+        
+        result = await db.execute(select(TelegramLink).where(TelegramLink.code == code))
+        if not result.scalar_one_or_none():
+            break
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate a unique link code. Please try again."
+        )
+
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     link = TelegramLink(
@@ -129,7 +140,6 @@ async def get_telegram_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    from hub.models.user_preferences import UserPreferences
     result = await db.execute(
         select(UserPreferences).where(
             UserPreferences.user_id == current_user.id
