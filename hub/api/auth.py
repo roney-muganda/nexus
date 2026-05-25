@@ -1,12 +1,17 @@
+import random
+import string
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, EmailStr
 from hub.models.database import get_db
+from datetime import datetime, timezone, timedelta
+from hub.models.telegram_link import TelegramLink
 from hub.models.user import User
 from hub.models.user_preferences import UserPreferences
 from hub.auth.password import hash_password, verify_password
 from hub.auth.jwt_handler import create_access_token
+from hub.auth.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -83,3 +88,56 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
 @router.get("/me")
 async def get_me(db: AsyncSession = Depends(get_db)):
     return {"message": "auth working"}
+
+@router.post("/telegram/generate-link-code")
+async def generate_telegram_link_code(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # invalidate any existing unused codes for this user
+    from sqlalchemy import update
+    await db.execute(
+        update(TelegramLink)
+        .where(
+            TelegramLink.user_id == current_user.id,
+            TelegramLink.used == False
+        )
+        .values(used=True)
+    )
+
+    # generate a new 6-digit code
+    code = "".join(random.choices(string.digits, k=6))
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    link = TelegramLink(
+        user_id=current_user.id,
+        code=code,
+        expires_at=expires_at,
+    )
+    db.add(link)
+    await db.commit()
+
+    return {
+        "code": code,
+        "expires_in_minutes": 10,
+        "instruction": f"Send this to your Telegram bot: /link {code}"
+    }
+
+
+@router.get("/telegram/status")
+async def get_telegram_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from hub.models.user_preferences import UserPreferences
+    result = await db.execute(
+        select(UserPreferences).where(
+            UserPreferences.user_id == current_user.id
+        )
+    )
+    prefs = result.scalar_one_or_none()
+    linked = prefs and prefs.telegram_chat_id is not None
+    return {
+        "telegram_linked": linked,
+        "telegram_chat_id": prefs.telegram_chat_id if linked else None
+    }
