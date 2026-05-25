@@ -3,7 +3,9 @@ import string
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from pydantic import BaseModel, EmailStr
+import zoneinfo
+from typing import Literal
+from pydantic import BaseModel, EmailStr, field_validator
 from hub.models.database import get_db
 from datetime import datetime, timezone, timedelta
 from hub.models.telegram_link import TelegramLink
@@ -30,6 +32,33 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class PreferencesUpdate(BaseModel):
+    daily_briefing_time: str | None = None
+    timezone: str | None = None
+    verbosity: Literal["low", "medium", "high"] | None = None # Validate verbosity using Literal
+
+    @field_validator('daily_briefing_time')
+    @classmethod
+    def validate_time_format(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                datetime.strptime(v, '%H:%M')
+            except ValueError:
+                raise ValueError('daily_briefing_time must be in HH:MM format')
+        return v
+    
+    @field_validator('timezone')
+    @classmethod
+    def validate_timezone(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                # Check if it's a valid IANA timezone name
+                zoneinfo.ZoneInfo(v) 
+            except zoneinfo.ZoneInfoNotFoundError:
+                raise ValueError(f'Invalid timezone: {v}. Must be a valid IANA timezone (e.g., "Africa/Nairobi").')
+        return v
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
@@ -151,3 +180,28 @@ async def get_telegram_status(
         "telegram_linked": linked,
         "telegram_chat_id": prefs.telegram_chat_id if linked else None
     }
+
+@router.patch("/preferences")
+async def update_preferences(
+    payload: PreferencesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    result = await db.execute(
+        select(UserPreferences).where(
+            UserPreferences.user_id == current_user.id
+        )
+    )
+    prefs = result.scalar_one_or_none()
+    if not prefs:
+        raise HTTPException(status_code=404, detail="Preferences not found")
+
+    if payload.daily_briefing_time is not None:
+        prefs.daily_briefing_time = payload.daily_briefing_time
+    if payload.timezone is not None:
+        prefs.timezone = payload.timezone
+    if payload.verbosity is not None:
+        prefs.verbosity = payload.verbosity
+
+    await db.commit()
+    return {"status": "updated"}
