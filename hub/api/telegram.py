@@ -44,7 +44,19 @@ async def get_session_id_for_chat(telegram_chat_id: int) -> str:
 
 
 @router.post("/webhook")
-async def telegram_webhook(request: Request):
+async def telegram_webhook(
+    request: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None)
+):
+    # 1. Webhook Authentication to prevent forged arbitrary requests
+    secret_token = os.getenv("TELEGRAM_SECRET_TOKEN")
+    if secret_token and x_telegram_bot_api_secret_token != secret_token:
+        logger.warning("Rejected Telegram webhook: Secret token mismatch.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Unauthorized webhook request"
+        )
+        
     try:
         data = await request.json()
     except Exception:
