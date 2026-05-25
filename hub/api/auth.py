@@ -37,7 +37,7 @@ class TokenResponse(BaseModel):
 class PreferencesUpdate(BaseModel):
     daily_briefing_time: str | None = None
     timezone: str | None = None
-    verbosity: Literal["low", "medium", "high"] | None = None # Validate verbosity using Literal
+    verbosity: Literal["terse", "normal", "detailed"] | None = None # Validate verbosity using Literal
 
     @field_validator('daily_briefing_time')
     @classmethod

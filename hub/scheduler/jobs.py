@@ -88,9 +88,11 @@ async def send_daily_briefing():
 
                 # 2. Check if the current local hour matches their preferred briefing time
                 # daily_briefing_time is guaranteed to be "HH:MM" due to Pydantic validation
-                briefing_hour = int(prefs.daily_briefing_time.split(":")[0])
+                time_parts = prefs.daily_briefing_time.split(":")
+                briefing_hour = int(time_parts[0])
+                briefing_minute = int(time_parts[1])
                 
-                if now_local.hour == briefing_hour:
+                if now_local.hour == briefing_hour and now_local.minute == briefing_minute:
                     await send_briefing_to_user(db, prefs, now_local, user_tz)
                     
             except Exception as e:
