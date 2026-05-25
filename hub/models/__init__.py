@@ -7,3 +7,4 @@ from hub.models.user_preferences import UserPreferences
 from hub.models.conversation_turn import ConversationTurn
 from hub.models.audit_log import AuditLog
 from hub.models.api_key import APIKey
+from hub.models.telegram_link import TelegramLink

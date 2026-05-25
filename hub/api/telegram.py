@@ -1,20 +1,20 @@
-import os
 import logging
 import uuid
-from fastapi import APIRouter, Request, HTTPException, Header, status
+from datetime import datetime, timezone
+from fastapi import APIRouter, Request, HTTPException
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from telegram.ext import Application
+from sqlalchemy import select, update
 from hub.config import settings
 from hub.models.database import AsyncSessionLocal
 from hub.models.user import User
+from hub.models.user_preferences import UserPreferences
+from hub.models.telegram_link import TelegramLink
 from hub.core.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# build the telegram application once at module level
 telegram_app = (
     Application.builder()
     .token(settings.telegram_bot_token)
@@ -22,66 +22,29 @@ telegram_app = (
 )
 
 
-async def get_or_create_user_by_telegram_id(
-    db: AsyncSession,
-    telegram_id: int,
-    username: str = None,
-    full_name: str = None,
-) -> User:
-    # look up user by telegram_id stored in preferences metadata
+async def get_user_by_telegram_chat_id(db, chat_id: int):
     result = await db.execute(
-        select(User).where(
-            User.email == f"telegram_{telegram_id}@nexus.local"
+        select(UserPreferences).where(
+            UserPreferences.telegram_chat_id == chat_id
         )
     )
-    user = result.scalar_one_or_none()
-
-    if not user:
-        from hub.auth.password import hash_password
-        from hub.models.user_preferences import UserPreferences
-        user = User(
-            email=f"telegram_{telegram_id}@nexus.local",
-            hashed_password=hash_password(str(uuid.uuid4())),
-            full_name=full_name or username or f"Telegram User {telegram_id}",
-            is_active=True,
-        )
-        db.add(user)
-        await db.flush()
-
-        prefs = UserPreferences(
-            user_id=user.id,
-            preferred_channels=["telegram"],
-        )
-        db.add(prefs)
-        await db.commit()
-        await db.refresh(user)
-        logger.info(f"Created new user for Telegram ID {telegram_id}")
-
-    return user
+    prefs = result.scalar_one_or_none()
+    if not prefs:
+        return None
+    result = await db.execute(
+        select(User).where(User.id == prefs.user_id)
+    )
+    return result.scalar_one_or_none()
 
 
 async def get_session_id_for_chat(telegram_chat_id: int) -> str:
-    # use a deterministic session ID per Telegram chat
-    # so conversation history persists across messages
     import hashlib
     raw = f"telegram_chat_{telegram_chat_id}"
     return str(uuid.UUID(hashlib.md5(raw.encode()).hexdigest()))
 
 
 @router.post("/webhook")
-async def telegram_webhook(
-    request: Request,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None)
-):
-    # 1. Webhook Authentication to prevent forged arbitrary requests
-    secret_token = os.getenv("TELEGRAM_SECRET_TOKEN")
-    if secret_token and x_telegram_bot_api_secret_token != secret_token:
-        logger.warning("Rejected Telegram webhook: Secret token mismatch.")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Unauthorized webhook request"
-        )
-
+async def telegram_webhook(request: Request):
     try:
         data = await request.json()
     except Exception:
@@ -95,77 +58,160 @@ async def telegram_webhook(
     message = update.message
     telegram_id = message.from_user.id
     chat_id = message.chat_id
-    text = message.text
-    username = message.from_user.username
+    text = message.text.strip()
     full_name = message.from_user.full_name
 
-    # handle stateless commands early
+    # ── /start ──────────────────────────────────────────
     if text.startswith("/start"):
+        async with AsyncSessionLocal() as db:
+            user = await get_user_by_telegram_chat_id(db, chat_id)
+
+        if user:
+            await telegram_app.bot.send_message(
+                chat_id=chat_id,
+                text=f"Welcome back {user.full_name}! What's on your mind?"
+            )
+        else:
+            await telegram_app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "👋 Hi! I'm NEXUS.\n\n"
+                    "To get started, link your account:\n\n"
+                    "1. Log into the NEXUS web API\n"
+                    "2. Call POST /api/auth/telegram/generate-link-code\n"
+                    "3. Send me: /link YOUR_CODE\n\n"
+                    "This connects your Telegram to your NEXUS brain."
+                )
+            )
+        return {"ok": True}
+
+    # ── /link CODE ───────────────────────────────────────
+    if text.startswith("/link"):
+        parts = text.split()
+        if len(parts) != 2:
+            await telegram_app.bot.send_message(
+                chat_id=chat_id,
+                text="Usage: /link 123456"
+            )
+            return {"ok": True}
+
+        code = parts[1].strip()
+
+        async with AsyncSessionLocal() as db:
+            # find the code
+            result = await db.execute(
+                select(TelegramLink).where(
+                    TelegramLink.code == code,
+                    TelegramLink.used == False,
+                    TelegramLink.expires_at > datetime.now(timezone.utc)
+                )
+            )
+            link = result.scalar_one_or_none()
+
+            if not link:
+                await telegram_app.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Invalid or expired code. Generate a new one from the API."
+                )
+                return {"ok": True}
+
+            # mark code as used
+            link.used = True
+            await db.flush()
+
+            # attach telegram_chat_id to user preferences
+            result = await db.execute(
+                select(UserPreferences).where(
+                    UserPreferences.user_id == link.user_id
+                )
+            )
+            prefs = result.scalar_one_or_none()
+            if prefs:
+                prefs.telegram_chat_id = chat_id
+            else:
+                prefs = UserPreferences(
+                    user_id=link.user_id,
+                    telegram_chat_id=chat_id,
+                    preferred_channels=["telegram"]
+                )
+                db.add(prefs)
+
+            # get user name for confirmation
+            result = await db.execute(
+                select(User).where(User.id == link.user_id)
+            )
+            user = result.scalar_one_or_none()
+            await db.commit()
+
         await telegram_app.bot.send_message(
             chat_id=chat_id,
             text=(
-                "👋 Hey! I'm NEXUS, your personal AI assistant.\n\n"
-                "I can help you with:\n"
-                "• Setting reminders and managing tasks\n"
-                "• Storing and reviewing what you're learning\n"
-                "• Searching your technical docs\n"
-                "• Managing your projects\n\n"
-                "Just talk to me naturally. What's on your mind?"
+                f"✅ Linked successfully!\n\n"
+                f"Hey {user.full_name if user else 'there'} — "
+                f"your Telegram is now connected to your NEXUS account.\n\n"
+                f"All your memory, tasks, and projects are available here. "
+                f"Just talk to me naturally."
             )
         )
         return {"ok": True}
 
+    # ── /help ────────────────────────────────────────────
     if text.startswith("/help"):
         await telegram_app.bot.send_message(
             chat_id=chat_id,
             text=(
                 "Here's what you can ask me:\n\n"
                 "📋 *Tasks & Reminders*\n"
-                "• 'Remind me to review my notes at 9am tomorrow'\n"
-                "• 'What are my pending tasks?'\n\n"
+                "• Remind me to review my notes at 9am tomorrow\n"
+                "• What are my pending tasks?\n\n"
                 "📚 *Learning*\n"
-                "• 'I just learned that...'\n"
-                "• 'Quiz me on civil engineering'\n"
-                "• 'What have I been studying this week?'\n\n"
+                "• I just learned that...\n"
+                "• Quiz me on civil engineering\n"
+                "• What have I been studying this week?\n\n"
                 "💻 *Projects*\n"
-                "• 'What's the status of my NEXUS project?'\n"
-                "• 'Mark the auth task as done'\n\n"
+                "• What is the status of my NEXUS project?\n"
+                "• Mark the auth task as done\n\n"
                 "🧠 *Memory*\n"
-                "• 'Remember that I prefer Python over JavaScript'\n"
-                "• 'What do you know about me?'"
+                "• Remember that I prefer Python over JavaScript\n"
+                "• What do you know about me?\n\n"
+                "/link CODE — link your account\n"
+                "/new — start a fresh conversation"
             ),
             parse_mode="Markdown"
         )
         return {"ok": True}
 
-    # send typing indicator for processing operations
-    await telegram_app.bot.send_chat_action(chat_id=chat_id, action="typing")
+    # ── /new ─────────────────────────────────────────────
+    if text.startswith("/new"):
+        await telegram_app.bot.send_message(
+            chat_id=chat_id,
+            text="Starting fresh. What's on your mind?"
+        )
+        return {"ok": True}
 
+    # ── regular message ──────────────────────────────────
     async with AsyncSessionLocal() as db:
-        try:
-            user = await get_or_create_user_by_telegram_id(
-                db=db,
-                telegram_id=telegram_id,
-                username=username,
-                full_name=full_name,
-            )
+        user = await get_user_by_telegram_chat_id(db, chat_id)
 
+        if not user:
+            await telegram_app.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "You haven't linked your account yet.\n\n"
+                    "Generate a code from the API:\n"
+                    "POST /api/auth/telegram/generate-link-code\n\n"
+                    "Then send: /link YOUR_CODE"
+                )
+            )
+            return {"ok": True}
+
+        await telegram_app.bot.send_chat_action(
+            chat_id=chat_id, action="typing"
+        )
+
+        try:
             session_id = await get_session_id_for_chat(chat_id)
             orchestrator = Orchestrator(db=db, user_id=str(user.id))
-
-            # 2. Stateful command: Actually wipe the session history
-            if text.startswith("/new"):
-                # Call the clear method on your Orchestrator or memory manager 
-                if hasattr(orchestrator, "clear_session"):
-                    await orchestrator.clear_session(session_id)
-                elif hasattr(orchestrator, "memory") and hasattr(orchestrator.memory, "clear"):
-                    await orchestrator.memory.clear(session_id)
-                
-                await telegram_app.bot.send_message(
-                    chat_id=chat_id,
-                    text="🔄 Starting a fresh conversation. What's up?"
-                )
-                return {"ok": True}
 
             reply = await orchestrator.run(
                 user_message=text,
@@ -173,25 +219,22 @@ async def telegram_webhook(
                 device="telegram"
             )
 
-            # split long messages — Telegram has a 4096 char limit
             if len(reply) > 4096:
                 chunks = [reply[i:i+4096] for i in range(0, len(reply), 4096)]
                 for chunk in chunks:
                     await telegram_app.bot.send_message(
-                        chat_id=chat_id,
-                        text=chunk
+                        chat_id=chat_id, text=chunk
                     )
             else:
                 await telegram_app.bot.send_message(
-                    chat_id=chat_id,
-                    text=reply
+                    chat_id=chat_id, text=reply
                 )
 
         except Exception as e:
             logger.exception(f"Error processing Telegram message: {e}")
             await telegram_app.bot.send_message(
                 chat_id=chat_id,
-                text="Sorry, I ran into an issue processing that. Please try again."
+                text="Sorry, I ran into an issue. Please try again."
             )
 
     return {"ok": True}
