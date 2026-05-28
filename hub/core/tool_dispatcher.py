@@ -139,7 +139,14 @@ class ToolDispatcher:
     )
 
     async def _execute_terminal_command(self, args: dict) -> dict:
-        return {"status": "pending", "message": "Desktop spoke coming in Task 10"}
+        from hub.api.websocket import send_command_to_spoke
+        return await send_command_to_spoke(
+            device_id="windows_laptop_001",
+            command=args["command"],
+            working_dir=args.get("working_dir"),
+            timeout_s=args.get("timeout_s", 30),
+            require_confirm=args.get("require_confirm", False),
+    )
 
     async def _web_search_and_summarize(self, args: dict) -> dict:
         return {"status": "pending", "message": "Web search coming in Task 8"}

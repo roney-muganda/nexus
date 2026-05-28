@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Desktop Spoke
     hmac_secret: str
+    expected_desktop_api_key: str | None = None
 
     class Config:
         env_file = ".env"
