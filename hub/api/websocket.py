@@ -27,10 +27,6 @@ async def desktop_websocket(websocket: WebSocket):
     device_id = websocket.headers.get("X-Device-ID")
     expected_key = f"Bearer {os.getenv('EXPECTED_DESKTOP_API_KEY')}"
     
-    print(f"\n--- AUTH DEBUG ---")
-    print(f"Spoke sent: '{client_api_key}'")
-    print(f"Hub expects: '{expected_key}'")
-    print(f"------------------\n")
 
     # Verify the API key
     if client_api_key != expected_key or not device_id:
@@ -91,6 +87,7 @@ async def send_command_to_spoke(
             "message": f"Desktop spoke '{device_id}' is not connected."
         }
 
+    import uuid
     from hub.auth.hmac_signer import sign_payload
 
     request_id = str(uuid.uuid4())
@@ -102,25 +99,27 @@ async def send_command_to_spoke(
         "timeout_s": timeout_s,
         "require_confirm": require_confirm,
     }
-    # Cryptographically sign the command so the Spoke trusts it
     payload = sign_payload(payload)
+
+    # 3. FIXED: Register the future *before* firing the message over the network
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+    _pending_results[request_id] = future
 
     await websocket.send_json(payload)
 
     # wait for result with timeout
     try:
-        result = await asyncio.wait_for(
-            wait_for_result(request_id),
-            timeout=timeout_s + 5
-        )
+        result = await asyncio.wait_for(future, timeout=timeout_s + 5)
         return result
     except asyncio.TimeoutError:
-        # Cleanup the pending future on timeout
-        _pending_results.pop(request_id, None)
         return {
             "status": "timeout",
             "message": "Desktop spoke did not respond in time"
         }
+    finally:
+        # Always clean up the registry to prevent memory leaks
+        _pending_results.pop(request_id, None)
 
 # pending results registry
 _pending_results: dict[str, asyncio.Future] = {}

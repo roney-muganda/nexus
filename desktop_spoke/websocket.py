@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import websockets
+import ctypes
 from datetime import datetime
 
 from desktop_spoke.config import HUB_WS_URL, DEVICE_ID, API_KEY
@@ -10,6 +11,8 @@ from desktop_spoke.notifier import show_notification
 
 logger = logging.getLogger("nexus-desktop")
 RECONNECT_DELAY = 5
+
+CLEAN_WS_URL = HUB_WS_URL.replace("HUB_WS_URL=", "").strip()
 
 async def handle_message(websocket, message: dict):
     """Processes incoming JSON commands from the Hub."""
@@ -35,10 +38,27 @@ async def handle_message(websocket, message: dict):
             }))
             return
 
-        # confirmation gate for destructive commands
+        # 1. FIXED: Actual blocking confirmation gate
         if require_confirm:
-            show_notification("NEXUS", f"Command requires confirmation: {command[:60]}")
             logger.info(f"Command requires confirmation: {command}")
+            
+            # Pop a native Windows Yes/No dialog box (runs in a separate thread so it doesn't block the async loop)
+            # 4 = Yes/No buttons, 32 = Question icon, 262144 = Topmost window
+            def ask_user():
+                return ctypes.windll.user32.MessageBoxW(0, f"NEXUS is attempting to run a command:\n\n{command}\n\nAllow execution?", "NEXUS Security", 4 | 32 | 262144)
+            
+            user_response = await asyncio.to_thread(ask_user)
+            
+            if user_response != 6:  # 6 is the return code for 'Yes'
+                logger.warning(f"User denied execution of: {command}")
+                await websocket.send(json.dumps({
+                    "type": "command_result",
+                    "request_id": request_id,
+                    "status": "rejected",
+                    "reason": "User denied execution",
+                    "exit_code": -1,
+                }))
+                return
 
         # execute the command safely
         result = execute_command(
@@ -73,8 +93,9 @@ async def connect_to_hub():
 
     while True:
         try:
+            # 2. FIXED: Honor the HUB_WS_URL environment variable again
             async with websockets.connect(
-                "ws://127.0.0.1:8000/ws/desktop",
+                CLEAN_WS_URL,
                 additional_headers=headers,
                 ping_interval=30,
                 ping_timeout=10,
