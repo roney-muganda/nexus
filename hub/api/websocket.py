@@ -106,19 +106,26 @@ async def send_command_to_spoke(
     future = loop.create_future()
     _pending_results[request_id] = future
 
-    await websocket.send_json(payload)
-
-    # wait for result with timeout
     try:
+        await websocket.send_json(payload)
+        
+        # wait for result with timeout
         result = await asyncio.wait_for(future, timeout=timeout_s + 5)
         return result
+        
     except asyncio.TimeoutError:
         return {
             "status": "timeout",
             "message": "Desktop spoke did not respond in time"
         }
+    except Exception as e:
+        # Catch unexpected drops during send
+        return {
+            "status": "error",
+            "message": f"Connection interrupted: {str(e)}"
+        }
     finally:
-        # Always clean up the registry to prevent memory leaks
+        # Guaranteed to run, preventing memory leaks
         _pending_results.pop(request_id, None)
 
 # pending results registry

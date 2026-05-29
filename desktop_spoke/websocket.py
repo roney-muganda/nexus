@@ -42,14 +42,32 @@ async def handle_message(websocket, message: dict):
         if require_confirm:
             logger.info(f"Command requires confirmation: {command}")
             
-            # Pop a native Windows Yes/No dialog box (runs in a separate thread so it doesn't block the async loop)
-            # 4 = Yes/No buttons, 32 = Question icon, 262144 = Topmost window
             def ask_user():
-                return ctypes.windll.user32.MessageBoxW(0, f"NEXUS is attempting to run a command:\n\n{command}\n\nAllow execution?", "NEXUS Security", 4 | 32 | 262144)
+                # MessageBoxTimeoutW signature: (hWnd, lpText, lpCaption, uType, wLanguageId, dwMilliseconds)
+                # Returns 32000 if it times out
+                timeout_ms = timeout_s * 1000
+                return ctypes.windll.user32.MessageBoxTimeoutW(
+                    0, 
+                    f"NEXUS is attempting to run a command:\n\n{command}\n\nAllow execution? (Auto-rejects in {timeout_s}s)", 
+                    "NEXUS Security", 
+                    4 | 32 | 262144, 
+                    0, 
+                    timeout_ms
+                )
             
             user_response = await asyncio.to_thread(ask_user)
             
-            if user_response != 6:  # 6 is the return code for 'Yes'
+            if user_response == 32000:
+                logger.warning(f"Confirmation timed out for: {command}")
+                await websocket.send(json.dumps({
+                    "type": "command_result",
+                    "request_id": request_id,
+                    "status": "timeout",
+                    "reason": "User did not confirm in time",
+                    "exit_code": -1,
+                }))
+                return
+            elif user_response != 6:  # 6 is 'Yes'
                 logger.warning(f"User denied execution of: {command}")
                 await websocket.send(json.dumps({
                     "type": "command_result",
@@ -123,7 +141,9 @@ async def connect_to_hub():
                     async for raw_message in websocket:
                         try:
                             message = json.loads(raw_message)
-                            await handle_message(websocket, message)
+                            # FIXED: Spawn a background task so long-running commands or prompts 
+                            # don't block the Spoke from answering Hub heartbeats!
+                            asyncio.create_task(handle_message(websocket, message))
                         except json.JSONDecodeError:
                             logger.warning("Invalid JSON received.")
                         except Exception as e:
