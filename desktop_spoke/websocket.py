@@ -79,11 +79,13 @@ async def handle_message(websocket, message: dict):
                 return
 
         # execute the command safely
-        result = execute_command(
+        result = await asyncio.to_thread(
+            execute_command,
             command=command,
             working_dir=working_dir,
             timeout_s=timeout_s,
         )
+        
         result["type"] = "command_result"
         result["request_id"] = request_id
 
