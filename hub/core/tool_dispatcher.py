@@ -157,12 +157,14 @@ class ToolDispatcher:
 
     async def _read_emails(self, args: dict) -> dict:
         return await read_and_summarize_emails(
+            user_id=str(self.user_id),
             max_results=args.get("max_results", 10),
             query=args.get("query", "is:unread"),
         )
 
     async def _draft_email_reply(self, args: dict) -> dict:
         return await draft_email_reply(
+            user_id=str(self.user_id),
             thread_id=args.get("thread_id"),
             to=args.get("to"),
             subject=args.get("subject"),

@@ -24,12 +24,13 @@ def decode_email_body(payload: dict) -> str:
 
 
 async def read_and_summarize_emails(
+    user_id: str,
     max_results: int = 10,
     query: str = "is:unread",
     summarize: bool = True,
 ) -> dict:
     try:
-        service = get_gmail_service()
+        service = get_gmail_service(user_id)
 
         result = service.users().messages().list(
             userId="me",
