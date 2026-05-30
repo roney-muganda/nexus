@@ -116,7 +116,7 @@ async def create_task_from_email(
     db,
 ) -> dict:
     try:
-        service = get_gmail_service()
+        service = get_gmail_service(user_id)
         msg = service.users().messages().get(
             userId="me", id=email_id, format="full"
         ).execute()
