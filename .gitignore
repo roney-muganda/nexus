@@ -8,3 +8,5 @@ chroma_data/
 *.db
 gmail_credentials.json
 gmail_token.json
+tokens/
+*gmail_token.json

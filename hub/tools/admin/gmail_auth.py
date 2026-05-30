@@ -14,14 +14,21 @@ SCOPES = [
 ]
 
 CREDENTIALS_FILE = "gmail_credentials.json"
-TOKEN_FILE = "gmail_token.json"
+TOKEN_DIR = "tokens"
+
+os.makedirs(TOKEN_DIR, exist_ok=True)
+
+def get_token_path(user_id: str) -> str:
+    """Returns a unique token file path for each user."""
+    return os.path.join(TOKEN_DIR, f"{user_id}_gmail_token.json")
 
 
-def get_gmail_service():
+def get_gmail_service(user_id: str):
     creds = None
+    token_file = get_token_path(user_id)
 
     if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:

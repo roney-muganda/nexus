@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 async def draft_email_reply(
+    user_id: str,
     thread_id: str = None,
     to: str = None,
     subject: str = None,
@@ -22,7 +23,7 @@ async def draft_email_reply(
     original_context = ""
     if thread_id:
         try:
-            service = get_gmail_service()
+            service = get_gmail_service(user_id)
             thread = service.users().threads().get(
                 userId="me", id=thread_id
             ).execute()
@@ -68,7 +69,7 @@ Keep it professional, concise, and natural."""
 
     if send_immediately and to:
         try:
-            service = get_gmail_service()
+            service = get_gmail_service(user_id)
             message = MIMEMultipart()
             message["to"] = to
             message["subject"] = subject or "Re: your message"
