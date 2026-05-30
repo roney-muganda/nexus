@@ -44,7 +44,7 @@ def get_gmail_service(user_id: str):
             )
             creds = flow.run_local_server(port=0)
 
-        with open(TOKEN_FILE, "w") as token:
+        with open(token_file, "w") as token:
             token.write(creds.to_json())
 
     return build("gmail", "v1", credentials=creds)
