@@ -27,7 +27,7 @@ def get_gmail_service(user_id: str):
     creds = None
     token_file = get_token_path(user_id)
 
-    if os.path.exists(TOKEN_FILE):
+    if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
 
     if not creds or not creds.valid:
@@ -50,7 +50,7 @@ def get_gmail_service(user_id: str):
     return build("gmail", "v1", credentials=creds)
 
 
-def authorize_gmail():
+def authorize_gmail(user_id: str):
     print("Starting Gmail OAuth2 authorization flow...")
     service = get_gmail_service()
     profile = service.users().getProfile(userId="me").execute()
