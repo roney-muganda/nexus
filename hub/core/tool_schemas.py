@@ -177,4 +177,66 @@ TOOL_SCHEMAS = [
             "required": []
         }
     },
+    {
+        "name": "read_emails",
+        "description": "Reads and summarizes the user's Gmail inbox. Use when asked to check emails, see what's new, or get an inbox summary.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of emails to fetch, default 10"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Gmail search query e.g. 'is:unread', 'from:boss@company.com', 'subject:invoice'"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "draft_email_reply",
+        "description": "Drafts or sends an email reply. Use when the user wants to reply to an email or compose a new one.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "description": "What the email should say — the user's intent in plain language"
+                },
+                "to": {
+                    "type": "string",
+                    "description": "Recipient email address"
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Email subject"
+                },
+                "thread_id": {
+                    "type": "string",
+                    "description": "Gmail thread ID to reply to"
+                },
+                "send_immediately": {
+                    "type": "boolean",
+                    "description": "If true, send immediately. If false, just draft for review."
+                }
+            },
+            "required": ["intent"]
+        }
+    },
+    {
+        "name": "create_tasks_from_email",
+        "description": "Extracts action items from an email and creates tasks. Use when an email contains things to do.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email_id": {
+                    "type": "string",
+                    "description": "Gmail message ID"
+                }
+            },
+            "required": ["email_id"]
+        }
+    },
 ]
