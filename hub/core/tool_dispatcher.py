@@ -8,7 +8,8 @@ import uuid
 from hub.tools.developer.project_context import get_project_context
 from hub.tools.developer.search_docs import search_technical_docs
 from hub.tools.student.review_quiz import generate_review_quiz, get_learning_summary
-
+from hub.tools.admin.email_reader import read_and_summarize_emails
+from hub.tools.admin.email_drafter import draft_email_reply, create_task_from_email
 
 class ToolDispatcher:
     def __init__(self, db: AsyncSession, user_id: str):
@@ -25,8 +26,11 @@ class ToolDispatcher:
             "store_learning":           self._store_learning,
             "web_search_and_summarize": self._web_search_and_summarize,
             "get_project_context":      self._get_project_context,
-            "generate_review_quiz": self._generate_review_quiz,
-            "get_learning_summary": self._get_learning_summary,
+            "generate_review_quiz":     self._generate_review_quiz,
+            "get_learning_summary":     self._get_learning_summary,
+            "read_emails":              self._read_emails,
+            "draft_email_reply":        self._draft_email_reply,
+            "create_tasks_from_email":  self._create_tasks_from_email,
         }
         handler = handlers.get(tool_name)
         if not handler:
@@ -150,3 +154,25 @@ class ToolDispatcher:
 
     async def _web_search_and_summarize(self, args: dict) -> dict:
         return {"status": "pending", "message": "Web search coming in Task 8"}
+
+    async def _read_emails(self, args: dict) -> dict:
+        return await read_and_summarize_emails(
+            max_results=args.get("max_results", 10),
+            query=args.get("query", "is:unread"),
+        )
+
+    async def _draft_email_reply(self, args: dict) -> dict:
+        return await draft_email_reply(
+            thread_id=args.get("thread_id"),
+            to=args.get("to"),
+            subject=args.get("subject"),
+            intent=args["intent"],
+            send_immediately=args.get("send_immediately", False),
+        )
+
+    async def _create_tasks_from_email(self, args: dict) -> dict:
+        return await create_task_from_email(
+            email_id=args["email_id"],
+            user_id=self.user_id,
+            db=self.db,
+        )

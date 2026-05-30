@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 chroma_data/
 *.db
+gmail_credentials.json
+gmail_token.json
