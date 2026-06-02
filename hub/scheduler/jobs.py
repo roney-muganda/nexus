@@ -93,7 +93,7 @@ async def send_daily_briefing():
                         f"at {current_time_str} ({prefs.timezone})"
                     )
                     # Fixed: Clean function signature matched here
-                    await send_briefing_to_user(db, prefs, now_local, tz)
+                    await send_briefing_to_user(db, prefsb)
                 else:
                     logger.debug(
                         f"Skipping briefing for {prefs.telegram_chat_id} — "
@@ -220,7 +220,7 @@ async def send_briefing_to_user(db, prefs: UserPreferences):
 
     # Track execution timestamp and save state
     prefs.last_briefing_sent_at = datetime.now(timezone.utc)
-    await db.flush()
+    await db.commit()
 
 
 async def check_project_health():
