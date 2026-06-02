@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, Integer, DateTime, ForeignKey, func, Enum as SAEnum, BigInteger
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, func, Enum as SAEnum, BigInteger
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 import enum
@@ -26,9 +26,16 @@ class UserPreferences(Base):
     integrations: Mapped[dict] = mapped_column(JSONB, default=dict)
     command_allowlist: Mapped[list] = mapped_column(ARRAY(String), default=list)
     memory_retention_days: Mapped[int] = mapped_column(Integer, default=365)
+    last_briefing_sent_at: Mapped[datetime | None] = mapped_column(
+    DateTime(timezone=True), nullable=True
+)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship("User", back_populates="preferences")
+    telegram_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
+
     telegram_chat_id: Mapped[int | None] = mapped_column(
         BigInteger, nullable=True, index=True
     )
