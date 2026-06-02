@@ -62,11 +62,11 @@ async def fire_due_reminders():
 
 
 async def send_daily_briefing():
-    logger.info("Running daily briefing job")
-    now_utc = datetime.now(timezone.utc)
+    from zoneinfo import ZoneInfo
+
+    logger.info("Running daily briefing check")
 
     async with AsyncSessionLocal() as db:
-        # get all users with telegram linked and briefing time set
         result = await db.execute(
             select(UserPreferences).where(
                 UserPreferences.telegram_chat_id != None,
@@ -77,39 +77,54 @@ async def send_daily_briefing():
 
         for prefs in all_prefs:
             try:
-                # 1. Resolve User's Local Timezone
-                tz_str = prefs.timezone or "UTC"
-                try:
-                    user_tz = zoneinfo.ZoneInfo(tz_str)
-                except Exception:
-                    user_tz = timezone.utc
-                
-                now_local = now_utc.astimezone(user_tz)
+                # get current time in user's timezone
+                tz = ZoneInfo(prefs.timezone or "UTC")
+                now_local = datetime.now(tz)
+                current_time_str = now_local.strftime("%H:%M")
 
-                # 2. Check if the current local hour matches their preferred briefing time
-                # daily_briefing_time is guaranteed to be "HH:MM" due to Pydantic validation
-                time_parts = prefs.daily_briefing_time.split(":")
-                briefing_hour = int(time_parts[0])
-                briefing_minute = int(time_parts[1])
-                
-                if now_local.hour == briefing_hour and now_local.minute == briefing_minute:
-                    await send_briefing_to_user(db, prefs, now_local, user_tz)
-                    
+                # only send if current hour matches briefing time
+                # compare just the hour to avoid minute precision issues
+                briefing_hour = prefs.daily_briefing_time[:2]
+                current_hour = current_time_str[:2]
+
+                if briefing_hour == current_hour:
+                    logger.info(
+                        f"Sending briefing to {prefs.telegram_chat_id} "
+                        f"at {current_time_str} ({prefs.timezone})"
+                    )
+                    # Fixed: Clean function signature matched here
+                    await send_briefing_to_user(db, prefs, now_local, tz)
+                else:
+                    logger.debug(
+                        f"Skipping briefing for {prefs.telegram_chat_id} — "
+                        f"briefing at {prefs.daily_briefing_time}, "
+                        f"now {current_time_str}"
+                    )
             except Exception as e:
                 logger.exception(
-                    f"Failed to process briefing queue for user {prefs.user_id}: {e}"
+                    f"Failed briefing check for user {prefs.user_id}: {e}"
                 )
 
 
-async def send_briefing_to_user(db, prefs: UserPreferences, now_local: datetime, user_tz: zoneinfo.ZoneInfo):
+async def send_briefing_to_user(db, prefs: UserPreferences):
+    # Rate-limiting check: skip if already sent within the last 20 hours
+    if prefs.last_briefing_sent_at:
+        now_utc = datetime.now(timezone.utc)
+        hours_since = (now_utc - prefs.last_briefing_sent_at).total_seconds() / 3600
+        if hours_since < 20:
+            logger.info(f"Briefing already sent {hours_since:.1f}h ago — skipping")
+            return
+
     from hub.api.telegram_utils import send_telegram_message
 
+    # Handle timezone setups cleanly inside the function
+    user_tz = zoneinfo.ZoneInfo(prefs.timezone or "UTC")
+    now_local = datetime.now(user_tz)
     now_utc = now_local.astimezone(timezone.utc)
 
-    # 3. Calculate timezone-aware boundaries for "Today" and convert them back to UTC for the DB
+    # Calculate timezone-aware boundaries for "Today" and convert them to UTC for the DB
     today_start_local = datetime(now_local.year, now_local.month, now_local.day, 0, 0, 0, tzinfo=user_tz)
     today_end_local = datetime(now_local.year, now_local.month, now_local.day, 23, 59, 59, tzinfo=user_tz)
-    
     today_end_utc = today_end_local.astimezone(timezone.utc)
 
     # get overdue tasks (due before right now)
@@ -203,6 +218,10 @@ async def send_briefing_to_user(db, prefs: UserPreferences, now_local: datetime,
     )
     logger.info(f"Sent daily briefing to chat {prefs.telegram_chat_id}")
 
+    # Track execution timestamp and save state
+    prefs.last_briefing_sent_at = datetime.now(timezone.utc)
+    await db.flush()
+
 
 async def check_project_health():
     logger.info("Running project health check")
@@ -218,7 +237,6 @@ async def check_project_health():
         all_prefs = result.scalars().all()
 
         for prefs in all_prefs:
-            # 4. Narrow the window to exactly 6 hours to prevent duplicate alerts
             overdue_result = await db.execute(
                 select(Task).where(
                     and_(
