@@ -47,9 +47,9 @@ services:
       - key: CHROMA_API_KEY
         sync: false
       - key: CHROMA_TENANT
-        value: "default_tenant"     
+        sync: false
       - key: CHROMA_DATABASE
-        value: "default_database"   
+        sync: false   
 
   - type: redis
     name: nexus-redis
