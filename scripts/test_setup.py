@@ -80,12 +80,23 @@ print()
 print("[ 4 ] Testing ChromaDB connection...")
 try:
     import chromadb
-    host = os.getenv("CHROMA_HOST", "localhost")
-    port = int(os.getenv("CHROMA_PORT", "8000"))
-    client = chromadb.HttpClient(host=host, port=port)
+    api_key = os.getenv("CHROMA_API_KEY")
+    
+    if api_key:
+        client = chromadb.CloudClient(
+            tenant=os.getenv("CHROMA_TENANT", "default_tenant"),
+            database=os.getenv("CHROMA_DATABASE", "default_database"),
+            api_key=api_key,
+        )
+        print("      ✓ Connected via CloudClient")
+    else:
+        host = os.getenv("CHROMA_HOST", "localhost")
+        port = int(os.getenv("CHROMA_PORT", "8000"))
+        client = chromadb.HttpClient(host=host, port=port)
+        print(f"      ✓ Connected via HttpClient — host: {host}:{port}")
+
     client.heartbeat()
     collections = client.list_collections()
-    print(f"      ✓ Connected — host: {host}:{port}")
     print(f"      ✓ Collections: {len(collections)}")
 except Exception as e:
     print(f"      ✗ Failed — {e}")
