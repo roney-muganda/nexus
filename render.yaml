@@ -20,22 +20,36 @@ services:
         value: nexus
       - key: DEBUG
         value: "false"  
+      
+      # ── LLM & Bot Keys ──
       - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+        
+      # ── Security & Auth ──
       - key: SECRET_KEY
         sync: false
       - key: HMAC_SECRET
         sync: false
-      - key: CHROMA_HOST
-        sync: false
-      - key: CHROMA_PORT
-        value: "8000"
       - key: JWT_ALGORITHM
         value: HS256
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_PUBLIC_KEY
+        sync: false
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
+        
+      # ── ChromaDB Cloud ──
+      - key: CHROMA_API_KEY
+        sync: false
+      - key: CHROMA_TENANT
+        value: "default_tenant"     
+      - key: CHROMA_DATABASE
+        value: "default_database"   
 
   - type: redis
     name: nexus-redis
@@ -48,4 +62,4 @@ databases:
     plan: free
     databaseName: nexus_db
     user: nexus_user
-    ipAllowList: []  
+    ipAllowList: []
