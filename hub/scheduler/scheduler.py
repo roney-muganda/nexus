@@ -3,6 +3,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
+from hub.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,7 @@ def get_scheduler() -> AsyncIOScheduler:
             
             jobstores = {
                 "default": RedisJobStore(
-                    host=host,
-                    port=port,
-                    db=1
+                    url=settings.redis_url,
                 )
             }
             logger.info(f"Successfully configured RedisJobStore at {host}:{port}")
