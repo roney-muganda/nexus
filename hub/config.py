@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     chroma_host: str = "localhost"
     chroma_port: int = 8000
 
+    chroma_api_key: str = ""
+    chroma_tenant: str = "default_tenant"
+    chroma_database: str = "default_database"
+
     # Auth
-    jwt_private_key: str
+    jwt_private_key: str     
     jwt_public_key: str
     jwt_algorithm: str = "RS256"
     access_token_expire_minutes: int = 60
