@@ -12,10 +12,7 @@ services:
           name: nexus-postgres
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          name: nexus-redis
-          type: redis
-          property: connectionString
+        sync: false
       - key: APP_NAME
         value: nexus
       - key: DEBUG
@@ -51,11 +48,6 @@ services:
       - key: CHROMA_DATABASE
         sync: false   
 
-  - type: redis
-    name: nexus-redis
-    plan: free
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
 
 databases:
   - name: nexus-postgres
