@@ -70,6 +70,11 @@ class Orchestrator:
                 f"- [{m['type']}] {m['content']}"
                 for m in memories
             ])
+
+            if len(memory_block) > 2000:
+                memory_block = memory_block[:2000] + "\n... [MEMORY TRUNCATED TO PREVENT OVERFLOW]"
+                logger.warning("Truncated massive memory block from ChromaDB")
+                
             messages.append({
                 "role": "user",
                 "content": f"[MEMORY CONTEXT]\n{memory_block}"
