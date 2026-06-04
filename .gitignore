@@ -12,3 +12,5 @@ gmail_token.json
 tokens/
 *gmail_token.json
 test_db.py
+private_key.pem
+public_key.pem
