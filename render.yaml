@@ -5,6 +5,7 @@ services:
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: uvicorn hub.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - fromGroup: nexus-secrets
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: DATABASE_URL
@@ -47,11 +48,6 @@ services:
         sync: false
       - key: CHROMA_DATABASE
         sync: false  
-
-    secretFiles:
-      - name: gmail_credentials.json
-        sync: false
-
 
 databases:
   - name: nexus-postgres
