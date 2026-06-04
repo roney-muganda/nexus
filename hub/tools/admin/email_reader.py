@@ -67,7 +67,8 @@ async def read_and_summarize_emails(
                 "sender": headers.get("From", "unknown"),
                 "date": headers.get("Date", ""),
                 "snippet": msg_data.get("snippet", ""),
-                "body": body[:2000],
+                # TRUNCATION FIX: Severely limit the body size just in case it is requested
+                "body": body[:300] + ("..." if len(body) > 300 else ""),
                 "labels": msg_data.get("labelIds", []),
             })
 
@@ -97,7 +98,8 @@ Emails:
 Format as a ranked list starting with highest priority."""
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            # MODEL FIX: Swapped to the active, rate-limit friendly 8B model
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1000,
             temperature=0.3,
