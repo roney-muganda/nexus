@@ -21,7 +21,7 @@ class Orchestrator:
         self.user_id = user_id
         self.dispatcher = ToolDispatcher(db, user_id)
         self.client = Groq(api_key=settings.groq_api_key)
-        self.model = "llama3-8b-8192"
+        self.model = "llama-3.1-8b-instant"
 
     def _build_tools(self) -> list:
         tools = []
