@@ -46,7 +46,11 @@ services:
       - key: CHROMA_TENANT
         sync: false
       - key: CHROMA_DATABASE
-        sync: false   
+        sync: false  
+
+    secretFiles:
+      - name: gmail_credentials.json
+        sync: false
 
 
 databases:
