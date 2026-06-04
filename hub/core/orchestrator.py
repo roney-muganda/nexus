@@ -160,13 +160,23 @@ class Orchestrator:
             .limit(20)
         )
         turns = result.scalars().all()
+        
+        # Keep only the 6 most recent turns to maintain a fast, sliding memory window
+        recent_turns = turns[-6:] if len(turns) > 6 else turns
+        
         history = []
-        for turn in turns:
+        for turn in recent_turns:
             role = "user" if turn.role == TurnRole.user else "assistant"
             if turn.content:
+                safe_content = turn.content
+                
+                # CIRCUIT BREAKER: Destroy ghost memories by slicing massive past outputs
+                if len(safe_content) > 1500:
+                    safe_content = safe_content[:1500] + "\n... [TRUNCATED TO PREVENT TOKEN OVERFLOW]"
+                    
                 history.append({
                     "role": role,
-                    "content": turn.content
+                    "content": safe_content
                 })
         return history
 
