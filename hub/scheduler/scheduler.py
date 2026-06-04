@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 _scheduler = None
 
+redis_client = redis.from_url(settings.redis_url)
 
 def get_scheduler() -> AsyncIOScheduler:
     global _scheduler
@@ -22,7 +23,7 @@ def get_scheduler() -> AsyncIOScheduler:
             
             jobstores = {
                 "default": RedisJobStore(
-                    url=settings.redis_url,
+                    connection_pool=redis_client.connection_pool
                 )
             }
             logger.info(f"Successfully configured RedisJobStore at {host}:{port}")
