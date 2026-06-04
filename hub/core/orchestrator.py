@@ -51,7 +51,8 @@ class Orchestrator:
             logger.error(f"Failed to clear session history for {session_id}: {e}")
             raise e
 
-    async def run(
+    
+async def run(
         self,
         user_message: str,
         session_id: str,
@@ -134,10 +135,17 @@ class Orchestrator:
                     result = await self.dispatcher.execute(tc.function.name, args)
                     tool_calls_made += 1
 
+                    # --- LIVE DATA CIRCUIT BREAKER ---
+                    # Physically clamp ANY massive tool output before it hits the LLM
+                    safe_result = str(result)
+                    if len(safe_result) > 2500:
+                        safe_result = safe_result[:2500] + "\n... [SYSTEM WARNING: TOOL OUTPUT TRUNCATED TO PREVENT TOKEN OVERFLOW]"
+                        logger.warning(f"Truncated massive tool output from {tc.function.name}")
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": result
+                        "content": safe_result
                     })
 
                 continue
@@ -153,7 +161,7 @@ class Orchestrator:
         )
         await self.db.commit()
         return final_response
-
+        
     async def _load_history(self, session_id: str) -> list[dict]:
         result = await self.db.execute(
             select(ConversationTurn)
