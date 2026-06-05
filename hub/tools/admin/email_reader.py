@@ -30,7 +30,7 @@ async def read_and_summarize_emails(
     summarize: bool = True,
 ) -> dict:
     try:
-        service = get_gmail_service(user_id)
+        service = get_gmail_service()
 
         result = service.users().messages().list(
             userId="me",
