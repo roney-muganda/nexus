@@ -90,5 +90,6 @@ app.include_router(websocket.router, prefix="/ws",          tags=["websocket"])
 app.include_router(telegram.router,  prefix="/api/telegram", tags=["telegram"])
 
 @app.get("/health")
+@app.head("/health")
 async def health_check():
     return {"status": "ok", "app": settings.app_name}
