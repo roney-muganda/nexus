@@ -38,6 +38,23 @@ class Orchestrator:
             })
         return tools
 
+    def _route_task(self, prompt: str) -> str:
+        """Dynamically selects the best model based on the task complexity."""
+        prompt_lower = prompt.lower()
+        
+        # Heavy Lifting: Code, engineering, and deep logic
+        heavy_keywords = ["code", "debug", "django", "python", "structural", "autocad", "calculate", "architect"]
+        if any(kw in prompt_lower for kw in heavy_keywords):
+            return "openai/gpt-oss-120b" # Groq's newest heavy reasoning model
+            
+        # Mid-Tier: Web searches, summaries, reading docs
+        mid_keywords = ["search", "summarize", "read", "explain", "research"]
+        if any(kw in prompt_lower for kw in mid_keywords):
+            return "openai/gpt-oss-20b" 
+            
+        # Default/Admin: Fast, cheap, everyday tasks (reminders, emails, chat)
+        return "llama-3.1-8b-instant"
+
     async def clear_session(self, session_id: str) -> None:
         """Deletes all conversation history for a given session to start fresh."""
         try:
@@ -96,15 +113,43 @@ class Orchestrator:
         max_tool_calls = 3
         final_response = ""
 
+        primary_model = self._route_task(user_message)
+
+        fallback_chain = [
+            primary_model,
+            "llama-3.1-8b-instant",      
+            "openai/gpt-oss-20b",        
+            "llama-3.3-70b-versatile"
+        ]
+
+        fallback_chain = list(dict.fromkeys(fallback_chain))
+
         while True:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                max_tokens=1024,
-                temperature=0.7,
-            )
+            response = None
+            last_error = None
+
+            for model_candidate in fallback_chain:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=model_candidate,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice="auto",
+                        max_tokens=1024,
+                        temperature=0.7,
+                    )
+
+                    logger.info(f"Successfully executed inference cycle using: {model_candidate}")
+                    break
+                except (groq.RateLimitError, Exception) as e:
+                    last_error = e
+                    logger.warning(f"Model {model_candidate} failed or rate limited. error: {str(e)}. Falling back down the chain...")
+                    continue
+            
+            if not response:
+                logger.error(f"All models in the chain failed. Last error caught: {last_error}")
+                final_response = "⚠️ All NEXUS core models are currently hit by high traffic limits. Please resend this message in a moment."
+                break
 
             message = response.choices[0].message
 
