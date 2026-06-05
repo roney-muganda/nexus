@@ -5,6 +5,7 @@ import logging
 from groq import Groq
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+
 from hub.config import settings
 from hub.core.context_builder import build_context, SYSTEM_PROMPT
 from hub.core.tool_schemas import TOOL_SCHEMAS
@@ -14,6 +15,7 @@ from hub.memory.manager import MemoryManager
 from hub.models.memory_context import MemoryType
 
 logger = logging.getLogger(__name__)
+
 
 class Orchestrator:
     def __init__(self, db: AsyncSession, user_id: str):
@@ -51,8 +53,7 @@ class Orchestrator:
             logger.error(f"Failed to clear session history for {session_id}: {e}")
             raise e
 
-    
-async def run(
+    async def run(
         self,
         user_message: str,
         session_id: str,
@@ -61,7 +62,7 @@ async def run(
         start_time = time.time()
 
         history = await self._load_history(session_id)
-        memory_manager=MemoryManager(db=self.db, user_id=self.user_id)
+        memory_manager = MemoryManager(db=self.db, user_id=self.user_id)
         memories = await memory_manager.retrieve(user_message, top_k=5)
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -84,6 +85,7 @@ async def run(
                 "role": "assistant",
                 "content": "Memory context loaded."
             })        
+            
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 
@@ -161,14 +163,14 @@ async def run(
         )
         await self.db.commit()
         return final_response
-        
+
     async def _load_history(self, session_id: str) -> list[dict]:
         result = await self.db.execute(
             select(ConversationTurn)
             .where(
                 ConversationTurn.session_id == uuid.UUID(session_id),
                 ConversationTurn.user_id == uuid.UUID(self.user_id)
-                )
+            )
             .order_by(ConversationTurn.created_at)
             .limit(20)
         )
@@ -188,7 +190,7 @@ async def run(
                     safe_content = safe_content[:1500] + "\n... [TRUNCATED TO PREVENT TOKEN OVERFLOW]"
                     
                 history.append({
-                    "role": role,
+                    "role": "role",
                     "content": safe_content
                 })
         return history
