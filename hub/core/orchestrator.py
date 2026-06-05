@@ -23,7 +23,7 @@ class Orchestrator:
         self.user_id = user_id
         self.dispatcher = ToolDispatcher(db, user_id)
         self.client = Groq(api_key=settings.groq_api_key)
-        self.model = "llama-3.1-8b-instant"
+        self.model = "llama-3.3-70b-versatile"
 
     def _build_tools(self) -> list:
         tools = []
@@ -102,7 +102,7 @@ class Orchestrator:
                 messages=messages,
                 tools=tools,
                 tool_choice="auto",
-                max_tokens=8192,
+                max_tokens=1024,
                 temperature=0.7,
             )
 
