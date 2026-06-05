@@ -190,7 +190,7 @@ class Orchestrator:
                     safe_content = safe_content[:1500] + "\n... [TRUNCATED TO PREVENT TOKEN OVERFLOW]"
                     
                 history.append({
-                    "role": "role",
+                    "role": role,
                     "content": safe_content
                 })
         return history
