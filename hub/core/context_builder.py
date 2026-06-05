@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 SYSTEM_PROMPT = """You are NEXUS, a highly capable personal AI assistant for a software developer and engineering student based in Nairobi.
 
 IMPORTANT: You are operating in East Africa Time (Africa/Nairobi). When interacting with the user about time, always speak in their local EAT timezone.
@@ -20,6 +23,16 @@ When the user shares something important about themselves, their preferences, or
 
 def build_context(memories: list[dict], user_message: str, history: list[dict]) -> list[dict]:
     messages = []
+
+    nairobi_tz = ZoneInfo("Africa/Nairobi")
+    current_time_str = datetime.now(nairobi_tz).strftime("%A, %B %d, %Y at %I:%M %p EAT")
+    
+    full_system_content = f"{SYSTEM_PROMPT}\n\n[LIVE TEMPORAL CONTEXT]\nCurrent Time: {current_time_str}"
+    
+    messages.append({
+        "role": "system",
+        "content": full_system_content
+    })
 
     # inject memories as context if any exist
     if memories:
