@@ -6,16 +6,22 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "Short reminder title"},
-                "datetime_utc": {"type": "string", "description": "ISO 8601 datetime in UTC e.g. 2024-01-15T09:00:00Z"},
+                "datetime_local": {
+                    "type": "string", 
+                    "description": "The exact local datetime in ISO 8601 format (e.g., '2026-06-05T15:30:00'). Calculate this based strictly on the current time provided in your system prompt. Do NOT apply any timezone conversions and NEVER output relative text like 'in 2 minutes'."
+                },
                 "recurrence": {"type": "string", "description": "Optional RRULE string for repeating reminders"},
                 "channels": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Notification channels e.g. ['telegram', 'desktop']"
                 },
-                "priority": {"type": "integer", "description": "Priority 1-5, 1 is highest"}
+                "priority": {
+                    "type": "integer", 
+                    "description": "Priority 1-5, 1 is highest. You MUST output a raw number (e.g., 2), NOT a string."
+                }
             },
-            "required": ["title", "datetime_utc"]
+            "required": ["title", "datetime_local"]
         }
     },
     {
