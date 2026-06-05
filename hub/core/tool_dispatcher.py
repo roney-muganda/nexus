@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 from hub.models.task import Task, TaskStatus
 from hub.memory.manager import MemoryManager
@@ -42,12 +43,20 @@ class ToolDispatcher:
             return json.dumps({"error": str(e)})
 
     async def _set_reminder(self, args: dict) -> dict:
+        # 1. Parse the local time string provided by the LLM
+        local_dt = datetime.fromisoformat(args["datetime_local"])
+        
+        # 2. Attach the local Nairobi timezone
+        nairobi_tz = ZoneInfo("Africa/Nairobi")
+        local_dt_aware = local_dt.replace(tzinfo=nairobi_tz)
+        
+        # 3. Convert safely to UTC for database storage
+        utc_dt = local_dt_aware.astimezone(ZoneInfo("UTC"))
+
         task = Task(
             user_id=self.user_id,
             title=args["title"],
-            reminder_at=datetime.fromisoformat(
-                args["datetime_utc"].replace("Z", "+00:00")
-            ),
+            reminder_at=utc_dt,
             recurrence=args.get("recurrence"),
             channels=args.get("channels", ["telegram"]),
             priority=args.get("priority", 2),
