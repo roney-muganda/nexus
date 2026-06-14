@@ -82,29 +82,8 @@ class Orchestrator:
         memory_manager = MemoryManager(db=self.db, user_id=self.user_id)
         memories = await memory_manager.retrieve(user_message, top_k=5)
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-
-        if memories:
-            memory_block = "\n".join([
-                f"- [{m['type']}] {m['content']}"
-                for m in memories
-            ])
-
-            if len(memory_block) > 2000:
-                memory_block = memory_block[:2000] + "\n... [MEMORY TRUNCATED TO PREVENT OVERFLOW]"
-                logger.warning("Truncated massive memory block from ChromaDB")
-                
-            messages.append({
-                "role": "user",
-                "content": f"[MEMORY CONTEXT]\n{memory_block}"
-            })
-            messages.append({
-                "role": "assistant",
-                "content": "Memory context loaded."
-            })        
-            
-        messages.extend(history)
-        messages.append({"role": "user", "content": user_message})
+        
+        messages = build_context(memories=memories, user_message=user_message, history=history)
 
         await self._save_turn(session_id, TurnRole.user, user_message, device)
 
