@@ -3,6 +3,7 @@ import uuid
 import time
 import logging
 from groq import Groq
+import groq
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 

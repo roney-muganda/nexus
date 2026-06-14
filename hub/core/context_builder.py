@@ -24,6 +24,7 @@ When the user shares something important about themselves, their preferences, or
 def build_context(memories: list[dict], user_message: str, history: list[dict]) -> list[dict]:
     messages = []
 
+    # 1. Inject the baseline system prompt along with dynamic local time context
     nairobi_tz = ZoneInfo("Africa/Nairobi")
     current_time_str = datetime.now(nairobi_tz).strftime("%A, %B %d, %Y at %I:%M %p EAT")
     
@@ -34,29 +35,36 @@ def build_context(memories: list[dict], user_message: str, history: list[dict]) 
         "content": full_system_content
     })
 
-    # inject memories as context if any exist
+    # 2. Inject memories as context if any exist
     if memories:
         memory_block = "\n".join([
             f"- [{m['type']}] {m['content']}" for m in memories
         ])
-        memory_message = {
-            "role": "user",
-            "parts": [{"text": f"[MEMORY CONTEXT — what you know about me]\n{memory_block}"}]
-        }
-        messages.append(memory_message)
+        
+        if len(memory_block) > 2000:
+            memory_block = memory_block[:2000] + "\n... [MEMORY TRUNCATED TO PREVENT OVERFLOW]"
+            
         messages.append({
-            "role": "model",
-            "parts": [{"text": "I have your context loaded. How can I help?"}]
+            "role": "user",
+            "content": f"[MEMORY CONTEXT — what you know about me]\n{memory_block}"
+        })
+        messages.append({
+            "role": "assistant",
+            "content": "I have your context loaded. How can I help?"
         })
 
-    # add conversation history
-    for turn in history[-10:]:  # last 10 turns max
-        messages.append(turn)
+    # 3. Add sliding window conversation history (last 10 turns max)
+    for turn in history[-10:]:
+        # Ensure history turns also use 'content', not 'parts'
+        messages.append({
+            "role": turn["role"],
+            "content": turn.get("content", "")
+        })
 
-    # add current user message
+    # 4. Add current incoming user message
     messages.append({
         "role": "user",
-        "parts": [{"text": user_message}]
+        "content": user_message
     })
 
     return messages
