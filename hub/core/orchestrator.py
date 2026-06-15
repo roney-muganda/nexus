@@ -24,7 +24,6 @@ class Orchestrator:
         self.user_id = user_id
         self.dispatcher = ToolDispatcher(db, user_id)
         self.client = Groq(api_key=settings.groq_api_key)
-        self.model = "llama-3.3-70b-versatile"
 
     def _build_tools(self) -> list:
         tools = []
@@ -43,17 +42,16 @@ class Orchestrator:
         """Dynamically selects the best model based on the task complexity."""
         prompt_lower = prompt.lower()
         
-        # Heavy Lifting: Code, engineering, and deep logic
-        heavy_keywords = ["code", "debug", "django", "python", "structural", "autocad", "calculate", "architect"]
+        # Heavy Lifting: Code, engineering, memory storage, quizzes, and complex tool usage
+        heavy_keywords = [
+            "code", "debug", "django", "python", "structural", "autocad", 
+            "calculate", "architect", "quiz", "remember", "store", "memory", 
+            "project", "learn", "study", "email"
+        ]
         if any(kw in prompt_lower for kw in heavy_keywords):
-            return "openai/gpt-oss-120b" # Groq's newest heavy reasoning model
+            return "llama-3.3-70b-versatile"
             
-        # Mid-Tier: Web searches, summaries, reading docs
-        mid_keywords = ["search", "summarize", "read", "explain", "research"]
-        if any(kw in prompt_lower for kw in mid_keywords):
-            return "openai/gpt-oss-20b" 
-            
-        # Default/Admin: Fast, cheap, everyday tasks (reminders, emails, chat)
+        # Default/Admin: Fast, cheap, everyday conversational tasks
         return "llama-3.1-8b-instant"
 
     async def clear_session(self, session_id: str) -> None:
@@ -83,7 +81,7 @@ class Orchestrator:
         memory_manager = MemoryManager(db=self.db, user_id=self.user_id)
         memories = await memory_manager.retrieve(user_message, top_k=5)
 
-        
+        # Utilize the dynamic context builder with East Africa Time injection
         messages = build_context(memories=memories, user_message=user_message, history=history)
 
         await self._save_turn(session_id, TurnRole.user, user_message, device)
@@ -93,15 +91,18 @@ class Orchestrator:
         max_tool_calls = 3
         final_response = ""
 
+        # Determine best model for this specific prompt
         primary_model = self._route_task(user_message)
 
+        # Standardized Groq Fallback Chain
         fallback_chain = [
             primary_model,
-            "llama-3.1-8b-instant",      
-            "openai/gpt-oss-20b",        
-            "llama-3.3-70b-versatile"
+            "llama-3.3-70b-versatile",    # Primary Heavy Intellect
+            "mixtral-8x7b-32768",         # Excellent backup model available on Groq
+            "llama-3.1-8b-instant"        # Fastest, lowest rate limit backup
         ]
 
+        # De-duplicate the list while preserving order
         fallback_chain = list(dict.fromkeys(fallback_chain))
 
         while True:
@@ -118,7 +119,6 @@ class Orchestrator:
                         max_tokens=1024,
                         temperature=0.7,
                     )
-
                     logger.info(f"Successfully executed inference cycle using: {model_candidate}")
                     break
                 except (groq.RateLimitError, Exception) as e:
@@ -163,7 +163,6 @@ class Orchestrator:
                     tool_calls_made += 1
 
                     # --- LIVE DATA CIRCUIT BREAKER ---
-                    # Physically clamp ANY massive tool output before it hits the LLM
                     safe_result = str(result)
                     if len(safe_result) > 2500:
                         safe_result = safe_result[:2500] + "\n... [SYSTEM WARNING: TOOL OUTPUT TRUNCATED TO PREVENT TOKEN OVERFLOW]"
@@ -201,7 +200,6 @@ class Orchestrator:
         )
         turns = result.scalars().all()
         
-        # Keep only the 6 most recent turns to maintain a fast, sliding memory window
         recent_turns = turns[-6:] if len(turns) > 6 else turns
         
         history = []
@@ -210,7 +208,7 @@ class Orchestrator:
             if turn.content:
                 safe_content = turn.content
                 
-                # CIRCUIT BREAKER: Destroy ghost memories by slicing massive past outputs
+                # CIRCUIT BREAKER
                 if len(safe_content) > 1500:
                     safe_content = safe_content[:1500] + "\n... [TRUNCATED TO PREVENT TOKEN OVERFLOW]"
                     
@@ -237,4 +235,4 @@ class Orchestrator:
             latency_ms=latency_ms
         )
         self.db.add(turn)
-        await self.db.flush()
+        await self.db.flush() 
