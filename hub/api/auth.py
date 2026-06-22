@@ -205,3 +205,33 @@ async def update_preferences(
 
     await db.commit()
     return {"status": "updated"}
+
+@router.post("/trigger-briefing")
+async def trigger_briefing_now(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from hub.scheduler.jobs import send_briefing_to_user
+    from hub.models.user_preferences import UserPreferences
+
+    result = await db.execute(
+        select(UserPreferences).where(
+            UserPreferences.user_id == current_user.id
+        )
+    )
+    prefs = result.scalar_one_or_none()
+
+    if not prefs or not prefs.telegram_chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No Telegram account linked"
+        )
+
+    # reset last sent so it fires regardless
+    prefs.last_briefing_sent_at = None
+    await db.flush()
+
+    await send_briefing_to_user(db, prefs)
+    await db.commit()
+
+    return {"status": "briefing sent"}

@@ -33,11 +33,11 @@ async def lifespan(app: FastAPI):
             replace_existing=True
         )
 
-        # daily briefing check — now runs EVERY minute to honor exact HH:MM settings
+        # daily briefing check — checks every 30 mins to catch the 59-minute window
         scheduler.add_job(
             send_daily_briefing,
-            trigger="cron",
-            minute="*", 
+            trigger="interval",
+            minutes=30, 
             id="daily_briefing",
             replace_existing=True
         )

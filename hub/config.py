@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "RS256"
     access_token_expire_minutes: int = 60
 
+    gmail_token_b64: str | None = None
+
     # Desktop Spoke
     hmac_secret: str
     expected_desktop_api_key: str | None = None
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"
 
 @lru_cache()
 def get_settings() -> Settings:
