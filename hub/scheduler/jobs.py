@@ -2,6 +2,7 @@ import logging
 import zoneinfo
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, and_
+
 from hub.models.database import AsyncSessionLocal
 from hub.models.task import Task, TaskStatus
 from hub.models.user import User
@@ -63,43 +64,55 @@ async def fire_due_reminders():
 
 async def send_daily_briefing():
     from zoneinfo import ZoneInfo
-
     logger.info("Running daily briefing check")
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(UserPreferences).where(
-                UserPreferences.telegram_chat_id != None,
-                UserPreferences.daily_briefing_time != None,
+                and_(
+                    UserPreferences.telegram_chat_id != None,
+                    UserPreferences.daily_briefing_time != None,
+                )
             )
         )
         all_prefs = result.scalars().all()
 
         for prefs in all_prefs:
             try:
-                # get current time in user's timezone
-                tz = ZoneInfo(prefs.timezone or "UTC")
+                tz = ZoneInfo(prefs.timezone or "Africa/Nairobi")
                 now_local = datetime.now(tz)
-                current_time_str = now_local.strftime("%H:%M")
-
-                # only send if current hour matches briefing time
-                # compare just the hour to avoid minute precision issues
-                briefing_hour = prefs.daily_briefing_time[:2]
-                current_hour = current_time_str[:2]
-
-                if briefing_hour == current_hour:
-                    logger.info(
-                        f"Sending briefing to {prefs.telegram_chat_id} "
-                        f"at {current_time_str} ({prefs.timezone})"
-                    )
-                    # Fixed: Clean function signature matched here
-                    await send_briefing_to_user(db, prefs)
-                else:
+                current_minutes = now_local.hour * 60 + now_local.minute
+                
+                # parse briefing time
+                briefing_parts = prefs.daily_briefing_time.split(":")
+                briefing_minutes = int(briefing_parts[0]) * 60 + int(briefing_parts[1])
+                
+                # allow a 59-minute window so we never miss it
+                diff = abs(current_minutes - briefing_minutes)
+                within_window = diff <= 59
+                
+                if not within_window:
                     logger.debug(
-                        f"Skipping briefing for {prefs.telegram_chat_id} — "
+                        f"Not briefing time for {prefs.user_id} — "
                         f"briefing at {prefs.daily_briefing_time}, "
-                        f"now {current_time_str}"
+                        f"now {now_local.strftime('%H:%M')}"
                     )
+                    continue
+                    
+                # skip if already sent today
+                if prefs.last_briefing_sent_at:
+                    last_sent_local = prefs.last_briefing_sent_at.astimezone(tz)
+                    if last_sent_local.date() == now_local.date():
+                        logger.info(
+                            f"Briefing already sent today for {prefs.user_id}"
+                        )
+                        continue
+                        
+                logger.info(
+                    f"Sending briefing to {prefs.telegram_chat_id} "
+                    f"at {now_local.strftime('%H:%M')} {prefs.timezone}"
+                )
+                await send_briefing_to_user(db, prefs)
             except Exception as e:
                 logger.exception(
                     f"Failed briefing check for user {prefs.user_id}: {e}"
@@ -118,7 +131,7 @@ async def send_briefing_to_user(db, prefs: UserPreferences):
     from hub.api.telegram_utils import send_telegram_message
 
     # Handle timezone setups cleanly inside the function
-    user_tz = zoneinfo.ZoneInfo(prefs.timezone or "UTC")
+    user_tz = zoneinfo.ZoneInfo(prefs.timezone or "Africa/Nairobi")
     now_local = datetime.now(user_tz)
     now_utc = now_local.astimezone(timezone.utc)
 
