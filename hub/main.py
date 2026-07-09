@@ -5,12 +5,14 @@ import logging
 
 from hub.config import settings
 from hub.api import auth, tasks, memory, chat, websocket, telegram
+from hub.core.redis_client import check_redis_health, close_redis
 
 from hub.scheduler.scheduler import get_scheduler
 from hub.scheduler.jobs import (
     fire_due_reminders,
     send_daily_briefing,
-    check_project_health
+    check_project_health,
+    sync_upcoming_reminders_to_redis
 )
 
 logger = logging.getLogger(__name__)
@@ -20,11 +22,18 @@ async def lifespan(app: FastAPI):
     # startup
     print(f"Starting {settings.app_name}...")
     
+    # 1. Initialize and verify Redis connection
+    await check_redis_health()
+    
     scheduler = None
     try:
+        # 2. Seed the Redis cache with upcoming tasks immediately on boot
+        print("Seeding Redis reminders cache from Postgres...")
+        await sync_upcoming_reminders_to_redis()
+
         scheduler = get_scheduler()
 
-        # fire reminders every minute
+        # 3. Fire reminders every minute (This now safely reads ONLY from Redis)
         scheduler.add_job(
             fire_due_reminders,
             trigger="interval",
@@ -33,7 +42,16 @@ async def lifespan(app: FastAPI):
             replace_existing=True
         )
 
-        # daily briefing check — checks every 30 mins to catch the 59-minute window
+        # 4. Sync Postgres upcoming tasks to Redis every 6 hours
+        scheduler.add_job(
+            sync_upcoming_reminders_to_redis,
+            trigger="interval",
+            hours=6,
+            id="sync_reminders",
+            replace_existing=True
+        )
+
+        # 5. Daily briefing check — checks every 30 mins to catch the 59-minute window
         scheduler.add_job(
             send_daily_briefing,
             trigger="interval",
@@ -42,7 +60,7 @@ async def lifespan(app: FastAPI):
             replace_existing=True
         )
 
-        # project health check every 6 hours
+        # 6. Project health check every 6 hours
         scheduler.add_job(
             check_project_health,
             trigger="interval",
@@ -64,6 +82,9 @@ async def lifespan(app: FastAPI):
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
         print("Shutting down scheduler...")
+        
+    # Close Redis cleanly to prevent connection leaks
+    await close_redis()
 
 app = FastAPI(
     title="NEXUS",

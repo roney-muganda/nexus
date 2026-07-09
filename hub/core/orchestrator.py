@@ -189,6 +189,14 @@ class Orchestrator:
         return final_response
 
     async def _load_history(self, session_id: str) -> list[dict]:
+        from hub.core.redis_client import cache_get, cache_set
+        
+        cache_key = f"history:{session_id}"
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Cache Miss: Load from DB
         result = await self.db.execute(
             select(ConversationTurn)
             .where(
@@ -200,6 +208,7 @@ class Orchestrator:
         )
         turns = result.scalars().all()
         
+        # Keep only the 6 most recent turns
         recent_turns = turns[-6:] if len(turns) > 6 else turns
         
         history = []
@@ -216,7 +225,11 @@ class Orchestrator:
                     "role": role,
                     "content": safe_content
                 })
+                
+        # Cache the history list for 2 hours (7200 seconds)
+        await cache_set(cache_key, history, ttl_seconds=7200)
         return history
+
 
     async def _save_turn(
         self,
@@ -226,6 +239,9 @@ class Orchestrator:
         device: str,
         latency_ms: int = None
     ):
+        from hub.core.redis_client import cache_get, cache_set
+        
+        # 1. Save to DB asynchronously
         turn = ConversationTurn(
             session_id=uuid.UUID(session_id),
             user_id=uuid.UUID(self.user_id),
@@ -235,4 +251,27 @@ class Orchestrator:
             latency_ms=latency_ms
         )
         self.db.add(turn)
-        await self.db.flush() 
+        await self.db.flush()
+
+        # 2. SMART CACHE UPDATE: Append to Redis instead of deleting
+        cache_key = f"history:{session_id}"
+        cached_history = await cache_get(cache_key)
+        
+        if cached_history is not None:
+            role_str = "user" if role == TurnRole.user else "assistant"
+            safe_content = content or ""
+            
+            if len(safe_content) > 1500:
+                safe_content = safe_content[:1500] + "\n... [TRUNCATED TO PREVENT TOKEN OVERFLOW]"
+                
+            # Append new turn
+            cached_history.append({
+                "role": role_str,
+                "content": safe_content
+            })
+            
+            # Maintain the sliding window of 6 turns
+            cached_history = cached_history[-6:]
+            
+            # Write back to cache, resetting the 2-hour timer
+            await cache_set(cache_key, cached_history, ttl_seconds=7200)
