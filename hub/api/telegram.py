@@ -24,18 +24,44 @@ telegram_app = (
 
 
 async def get_user_by_telegram_chat_id(db, chat_id: int):
+    cache_key = f"telegram_user:{chat_id}"
+    cached = await cache_get(cache_key)
+
+    if cached and "user_id" in cached:
+        # Cast the cached string back to a UUID for the Postgres query
+        try:
+            user_uuid = uuid.UUID(cached["user_id"])
+            result = await db.execute(
+                select(User).where(User.id == user_uuid)
+            )
+            return result.scalar_one_or_none()
+        except ValueError:
+            pass # Fallback to DB if UUID casting somehow fails
+
+    # Cache Miss: Find the user via their preferences
     result = await db.execute(
         select(UserPreferences).where(
             UserPreferences.telegram_chat_id == chat_id
         )
     )
     prefs = result.scalar_one_or_none()
+    
     if not prefs:
         return None
+
+    # Fetch the actual user object
     result = await db.execute(
         select(User).where(User.id == prefs.user_id)
     )
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+
+    if user:
+        # Cache the mapping for 1 hour (3600 seconds)
+        await cache_set(cache_key, {
+            "user_id": str(user.id)
+        }, ttl_seconds=3600)
+
+    return user
 
 
 async def get_session_id_for_chat(telegram_chat_id: int) -> str:
@@ -154,7 +180,15 @@ async def telegram_webhook(
                 select(User).where(User.id == link.user_id)
             )
             user = result.scalar_one_or_none()
+            
+            # Commit all database changes
             await db.commit()
+
+        # --- SEED REDIS CACHE ---
+        from hub.core.redis_client import cache_set
+        await cache_set(f"telegram_user:{chat_id}", {
+            "user_id": str(link.user_id)
+        }, ttl_seconds=3600)
 
         await telegram_app.bot.send_message(
             chat_id=chat_id,

@@ -1,3 +1,4 @@
+import json
 import logging
 import zoneinfo
 from datetime import datetime, timezone, timedelta
@@ -8,58 +9,127 @@ from hub.models.task import Task, TaskStatus
 from hub.models.user import User
 from hub.models.user_preferences import UserPreferences
 from hub.models.memory_context import MemoryContext, MemoryType
+from hub.core.redis_client import get_redis, cache_get, cache_set
 
 logger = logging.getLogger(__name__)
 
+REMINDERS_ZSET_KEY = "reminders:due"
+
 
 async def fire_due_reminders():
+    """
+    RUNS EVERY 1 MINUTE:
+    Checks Upstash Redis Sorted Set for due reminders. Bypasses Neon completely
+    unless a reminder is actively firing.
+    """
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    r = await get_redis()
+
+    # 1. Fetch all tasks matching scores from 0 up to 'now' timestamp
+    due_items = await r.zrangebyscore(REMINDERS_ZSET_KEY, 0, now_ts)
+    if not due_items:
+        return
+
+    logger.info(f"⏰ Found {len(due_items)} due reminders in Redis cache.")
+
+    async with AsyncSessionLocal() as db:
+        for item_json in due_items:
+            try:
+                task_data = json.loads(item_json)
+                task_id = task_data.get("id")
+                user_id = task_data.get("user_id")
+                title = task_data.get("title")
+                description = task_data.get("description")
+
+                # 2. Check Redis for User Preferences (Telegram Chat ID)
+                prefs_key = f"prefs:{user_id}"
+                prefs_data = await cache_get(prefs_key)
+
+                if prefs_data:
+                    telegram_chat_id = prefs_data.get("telegram_chat_id")
+                else:
+                    # Cache miss on preferences (Rarely hits DB)
+                    prefs_result = await db.execute(
+                        select(UserPreferences).where(UserPreferences.user_id == user_id)
+                    )
+                    prefs = prefs_result.scalar_one_or_none()
+                    telegram_chat_id = prefs.telegram_chat_id if prefs else None
+
+                    if prefs:
+                        await cache_set(prefs_key, {
+                            "telegram_chat_id": prefs.telegram_chat_id,
+                            "timezone": prefs.timezone,
+                            "daily_briefing_time": prefs.daily_briefing_time,
+                        }, ttl_seconds=3600) # Cache preference for 1 hour
+
+                # 3. Fire Telegram Notification
+                if telegram_chat_id:
+                    from hub.api.telegram_utils import send_reminder_notification
+                    await send_reminder_notification(
+                        chat_id=telegram_chat_id,
+                        title=title,
+                        notes=description
+                    )
+                    logger.info(f"✅ Telegram reminder dispatched for task: {title}")
+
+                # 4. Clear reminder from Postgres so it doesn't double-fire on next sync
+                await db.execute(
+                    Task.__table__.update()
+                    .where(Task.id == task_id)
+                    .values(reminder_at=None)
+                )
+                
+                # 5. Remove processing item from Redis Sorted Set
+                await r.zrem(REMINDERS_ZSET_KEY, item_json)
+
+            except Exception as e:
+                logger.exception(f"Failed to process cached reminder item: {e}")
+
+        await db.commit()
+
+
+async def sync_upcoming_reminders_to_redis():
+    """
+    RUNS EVERY 6 HOURS:
+    Looks ahead 7 hours into Neon Postgres, finds upcoming active reminders,
+    and caches them into the Redis Sorted Set.
+    """
     now = datetime.now(timezone.utc)
-    logger.info(f"Checking for due reminders at {now}")
+    lookahead_limit = now + timedelta(hours=7)
+    logger.info(f"🔄 Syncing Postgres reminders between {now} and {lookahead_limit} to Redis...")
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Task).where(
                 and_(
-                    Task.reminder_at <= now,
+                    Task.reminder_at >= now,
+                    Task.reminder_at <= lookahead_limit,
                     Task.status == TaskStatus.todo,
-                    Task.reminder_at != None,
+                    Task.reminder_at != None
                 )
             )
         )
-        due_tasks = result.scalars().all()
+        upcoming_tasks = result.scalars().all()
 
-        if not due_tasks:
+        if not upcoming_tasks:
+            logger.info("No upcoming reminders found to sync.")
             return
 
-        logger.info(f"Found {len(due_tasks)} due reminders")
+        r = await get_redis()
+        pipeline = r.pipeline()
 
-        for task in due_tasks:
-            try:
-                # get user preferences for notification channel
-                prefs_result = await db.execute(
-                    select(UserPreferences).where(
-                        UserPreferences.user_id == task.user_id
-                    )
-                )
-                prefs = prefs_result.scalar_one_or_none()
+        for task in upcoming_tasks:
+            task_payload = json.dumps({
+                "id": str(task.id),
+                "user_id": str(task.user_id),
+                "title": task.title,
+                "description": task.description or ""
+            })
+            score = int(task.reminder_at.timestamp())
+            pipeline.zadd(REMINDERS_ZSET_KEY, {task_payload: score})
 
-                if prefs and prefs.telegram_chat_id:
-                    from hub.api.telegram_utils import send_reminder_notification
-                    await send_reminder_notification(
-                        chat_id=prefs.telegram_chat_id,
-                        title=task.title,
-                        notes=task.description
-                    )
-                    logger.info(f"Sent reminder for task: {task.title}")
-
-                # clear reminder_at so it doesn't fire again
-                task.reminder_at = None
-                await db.flush()
-
-            except Exception as e:
-                logger.exception(f"Failed to send reminder for task {task.id}: {e}")
-
-        await db.commit()
+        await pipeline.execute()
+        logger.info(f"🚀 Successfully synchronized {len(upcoming_tasks)} tasks to Redis.")
 
 
 async def send_daily_briefing():
