@@ -46,7 +46,7 @@ def build_context(memories: list[dict], user_message: str, history: list[dict]) 
     # Use strict 24-hour time (%H:%M) and explicitly state the part of day
     current_time_str = now.strftime(f"%A, %B %d, %Y at %H:%M EAT (This is the {time_of_day})")
     
-    full_system_content = f"{SYSTEM_PROMPT}\n\n[LIVE TEMPORAL CONTEXT]\nCurrent Time: {current_time_str}\nCurrent Location: {current_location}"
+    full_system_content = f"{SYSTEM_PROMPT}\n\n[LIVE TEMPORAL CONTEXT]\nCurrent Time: {current_time_str}"
     
     messages.append({
         "role": "system",
