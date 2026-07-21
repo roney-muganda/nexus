@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-SYSTEM_PROMPT = """You are NEXUS, a highly capable personal AI assistant for a software developer and engineering student based in Nairobi.
+SYSTEM_PROMPT = """You are NEXUS, a highly capable personal AI assistant for a software developer and engineering student.
 
 IMPORTANT: You are operating in East Africa Time (Africa/Nairobi). When interacting with the user about time, always speak in their local EAT timezone.
 
@@ -31,9 +31,23 @@ def build_context(memories: list[dict], user_message: str, history: list[dict]) 
 
     # 1. Inject the baseline system prompt along with dynamic local time context
     nairobi_tz = ZoneInfo("Africa/Nairobi")
-    current_time_str = datetime.now(nairobi_tz).strftime("%A, %B %d, %Y at %I:%M %p EAT")
+    now = datetime.now(nairobi_tz)
     
-    full_system_content = f"{SYSTEM_PROMPT}\n\n[LIVE TEMPORAL CONTEXT]\nCurrent Time: {current_time_str}"
+    # Calculate time of day to completely eliminate LLM hallucinations
+    if now.hour < 12:
+        time_of_day = "Morning"
+    elif now.hour < 17:
+        time_of_day = "Afternoon"
+    elif now.hour < 21:
+        time_of_day = "Evening"
+    else:
+        time_of_day = "Night"
+
+    # Use strict 24-hour time (%H:%M) and explicitly state the part of day
+    current_time_str = now.strftime(f"%A, %B %d, %Y at %H:%M EAT (This is the {time_of_day})")
+    current_location = "Mombasa, Mombasa County, Kenya"
+    
+    full_system_content = f"{SYSTEM_PROMPT}\n\n[LIVE TEMPORAL CONTEXT]\nCurrent Time: {current_time_str}\nCurrent Location: {current_location}"
     
     messages.append({
         "role": "system",
