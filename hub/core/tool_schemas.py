@@ -10,7 +10,7 @@ TOOL_SCHEMAS = [
                     "type": "string", 
                     "description": "The exact local datetime in ISO 8601 format (e.g., '2026-06-05T15:30:00'). Calculate this based strictly on the current time provided in your system prompt. Do NOT apply any timezone conversions and NEVER output relative text like 'in 2 minutes'."
                 },
-                "recurrence": {"type": "string", "description": "Optional RRULE string for repeating reminders"},
+                "recurrence": {"type": ["string", "null"], "description": "Optional RRULE string for repeating reminders"},
                 "channels": {
                     "type": "array",
                     "items": {"type": "string"},
