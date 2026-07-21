@@ -1,41 +1,48 @@
 import json
 import logging
-import os
 import asyncio
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from dotenv import load_dotenv
 from pydantic import BaseModel
 
-# 1. Force load the .env file so the Hub can read EXPECTED_DESKTOP_API_KEY
-load_dotenv()
+from hub.config import settings
+from hub.auth.hmac_signer import sign_payload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# registry of connected desktop spokes
+# ─── REGISTRIES ──────────────────────────────────────────────
 connected_spokes: dict[str, WebSocket] = {}
 _ws_device_map: dict[WebSocket, str] = {}
+_pending_results: dict[str, asyncio.Future] = {}
 
+def resolve_result(request_id: str, result: dict):
+    future = _pending_results.get(request_id)
+    if future and not future.done():
+        future.set_result(result)
+
+
+# ─── WEBSOCKET ENDPOINT ──────────────────────────────────────
 @router.websocket("/desktop")
 async def desktop_websocket(websocket: WebSocket):
-    # 2. ALWAYS accept the connection first to prevent ASGI handshake timeouts
+    # 1. ALWAYS accept the connection first to prevent ASGI handshake timeouts
     await websocket.accept()
 
-    # 3. Authentication Phase
+    # 2. Authentication Phase
     client_api_key = websocket.headers.get("Authorization")
     device_id = websocket.headers.get("X-Device-ID")
-    expected_key = f"Bearer {os.getenv('EXPECTED_DESKTOP_API_KEY')}"
     
-
-    # Verify the API key
+    # Use Pydantic settings instead of os.getenv
+    expected_key = f"Bearer {settings.expected_desktop_api_key}"
+    
+    # Verify the API key and Device ID
     if client_api_key != expected_key or not device_id:
         logger.warning(f"Rejected WebSocket connection: Invalid API Key or missing Device ID.")
         # Gracefully close the established connection with a Policy Violation
         await websocket.close(code=1008)  
         return
 
-    # 4. Registration
+    # 3. Registration
     connected_spokes[device_id] = websocket
     _ws_device_map[websocket] = device_id
     logger.info(f"Desktop spoke connected: {device_id}")
@@ -73,6 +80,7 @@ async def desktop_websocket(websocket: WebSocket):
             del _ws_device_map[websocket]
 
 
+# ─── COMMAND SENDER ──────────────────────────────────────────
 async def send_command_to_spoke(
     device_id: str,
     command: str,
@@ -87,9 +95,6 @@ async def send_command_to_spoke(
             "message": f"Desktop spoke '{device_id}' is not connected."
         }
 
-    import uuid
-    from hub.auth.hmac_signer import sign_payload
-
     request_id = str(uuid.uuid4())
     payload = {
         "type": "exec_request",
@@ -99,9 +104,11 @@ async def send_command_to_spoke(
         "timeout_s": timeout_s,
         "require_confirm": require_confirm,
     }
+    
+    # Sign payload to ensure it wasn't tampered with
     payload = sign_payload(payload)
 
-    # 3. FIXED: Register the future *before* firing the message over the network
+    # Register the future *before* firing the message over the network
     loop = asyncio.get_event_loop()
     future = loop.create_future()
     _pending_results[request_id] = future
@@ -128,31 +135,14 @@ async def send_command_to_spoke(
         # Guaranteed to run, preventing memory leaks
         _pending_results.pop(request_id, None)
 
-# pending results registry
-_pending_results: dict[str, asyncio.Future] = {}
 
-async def wait_for_result(request_id: str):
-    loop = asyncio.get_event_loop()
-    future = loop.create_future()
-    _pending_results[request_id] = future
-    try:
-        return await future
-    finally:
-        _pending_results.pop(request_id, None)
-
-def resolve_result(request_id: str, result: dict):
-    future = _pending_results.get(request_id)
-    if future and not future.done():
-        future.set_result(result)
-
-
+# ─── TEST ENDPOINT ───────────────────────────────────────────
 class TestCommandRequest(BaseModel):
     command: str
     device_id: str = "windows_laptop_001"
 
 @router.post("/test-desktop-command")
 async def test_desktop_command(req: TestCommandRequest):
-    # This calls the function we wrote earlier!
     result = await send_command_to_spoke(
         device_id=req.device_id,
         command=req.command,
