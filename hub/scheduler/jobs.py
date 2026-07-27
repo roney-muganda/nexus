@@ -137,12 +137,10 @@ async def send_daily_briefing():
     logger.info("Running daily briefing check")
 
     async with AsyncSessionLocal() as db:
+        # 1. Removed the strict requirement for daily_briefing_time to not be null
         result = await db.execute(
             select(UserPreferences).where(
-                and_(
-                    UserPreferences.telegram_chat_id != None,
-                    UserPreferences.daily_briefing_time != None,
-                )
+                UserPreferences.telegram_chat_id.isnot(None)
             )
         )
         all_prefs = result.scalars().all()
@@ -154,6 +152,7 @@ async def send_daily_briefing():
                 current_minutes = now_local.hour * 60 + now_local.minute
                 
                 # parse briefing time
+                pref_time = prefs.daily_briefing_time or "09:00"
                 briefing_parts = prefs.daily_briefing_time.split(":")
                 briefing_minutes = int(briefing_parts[0]) * 60 + int(briefing_parts[1])
                 
