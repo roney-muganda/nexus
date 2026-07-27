@@ -153,7 +153,8 @@ async def send_daily_briefing():
                 
                 # parse briefing time
                 pref_time = prefs.daily_briefing_time or "09:00"
-                briefing_parts = prefs.daily_briefing_time.split(":")
+                # Use pref_time here, NOT prefs.daily_briefing_time
+                briefing_parts = pref_time.split(":") 
                 briefing_minutes = int(briefing_parts[0]) * 60 + int(briefing_parts[1])
                 
                 # allow a 59-minute window so we never miss it
