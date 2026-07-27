@@ -231,9 +231,28 @@ async def telegram_webhook(
 
     # ── /new ─────────────────────────────────────────────
     if text.startswith("/new"):
+        async with AsyncSessionLocal() as db:
+            user = await get_user_by_telegram_chat_id(db, chat_id)
+            
+            if user:
+                try:
+                    session_id = await get_session_id_for_chat(chat_id)
+                    orchestrator = Orchestrator(db=db, user_id=str(user.id))
+                    
+                    # 1. Clear the history from the Postgres database
+                    await orchestrator.clear_session(session_id)
+                    
+                    # 2. Clear the history from the Redis cache
+                    from hub.core.redis_client import get_redis
+                    r = await get_redis()
+                    await r.delete(f"history:{session_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to clear session on /new command: {e}")
+
         await telegram_app.bot.send_message(
             chat_id=chat_id,
-            text="Starting fresh. What's on your mind?"
+            text="🧹 Conversation history wiped! Starting completely fresh. What's on your mind?"
         )
         return {"ok": True}
 
