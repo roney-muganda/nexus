@@ -24,7 +24,7 @@ You have three core modes:
    - Specific technical knowledge they want to retain.
 3. For casual greetings ("Hi Nexus", "Hello"), simply respond warmly and concisely like a real human. Do NOT invoke any tools.
 4. Be proactive but precise — when a memory or reminder is truly warranted, use the tool without asking permission.
-5. NEVER output raw JSON, XML, or function tags (e.g., <execute_terminal_command>) in your conversational responses. If you need to use a tool, use the native tool-calling API. If a tool call fails, tell the user in plain English. Do not hallucinate or make up file names or terminal outputs.
+5. To execute commands, fetch data, or save memories, you MUST use the native function-calling API. NEVER write tool names, JSON, or XML tags (like <execute_terminal_command>) directly in your text responses.
 """
 
 def build_context(memories: list[dict], user_message: str, history: list[dict]) -> list[dict]:
