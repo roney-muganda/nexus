@@ -245,4 +245,36 @@ TOOL_SCHEMAS = [
             "required": ["email_id"]
         }
     },
+    {
+        "name": "generate_daily_plan",
+        "description": "Generates an intelligent structured plan for the user's entire day based on their tasks, learning history, preferences and energy level. Use when asked to plan the day, create a schedule, or organize the day ahead.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "energy_level": {
+                    "type": "string",
+                    "enum": ["low", "normal", "high"],
+                    "description": "User's energy level today"
+                },
+                "focus_preference": {
+                    "type": "string",
+                    "description": "What the user wants to focus on today e.g. 'civil engineering study' or 'NEXUS deployment'"
+                },
+                "custom_instructions": {
+                    "type": "string",
+                    "description": "Any specific adjustments to the plan"
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_todays_plan",
+        "description": "Retrieves the plan already generated for today. Use when asked what is on the plan, what is next, or what to do now.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
