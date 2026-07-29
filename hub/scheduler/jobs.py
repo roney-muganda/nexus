@@ -152,7 +152,7 @@ async def send_daily_briefing():
                 current_minutes = now_local.hour * 60 + now_local.minute
                 
                 # parse briefing time
-                pref_time = prefs.daily_briefing_time or "09:00"
+                pref_time = prefs.daily_briefing_time or "07:00"
                 # Use pref_time here, NOT prefs.daily_briefing_time
                 briefing_parts = pref_time.split(":") 
                 briefing_minutes = int(briefing_parts[0]) * 60 + int(briefing_parts[1])
@@ -300,6 +300,25 @@ async def send_briefing_to_user(db, prefs: UserPreferences):
         text=message
     )
     logger.info(f"Sent daily briefing to chat {prefs.telegram_chat_id}")
+
+    # --- NEW: Generate and append daily plan ---
+    try:
+        from hub.tools.planner.daily_planner import generate_daily_plan
+        plan_result = await generate_daily_plan(
+            db=db,
+            user_id=str(prefs.user_id),
+        )
+        if plan_result.get("status") in ["generated", "existing"]:
+            plan_text = plan_result.get("plan", "")
+            # send plan as a separate message after the briefing
+            await send_telegram_message(
+                chat_id=prefs.telegram_chat_id,
+                text=f"📋 *Today's Plan*\n\n{plan_text}"
+            )
+            logger.info(f"Sent daily plan to chat {prefs.telegram_chat_id}")
+    except Exception as e:
+        logger.exception(f"Failed to generate daily plan for {prefs.user_id}: {e}")
+    # -------------------------------------------
 
     # Track execution timestamp and save state
     prefs.last_briefing_sent_at = datetime.now(timezone.utc)

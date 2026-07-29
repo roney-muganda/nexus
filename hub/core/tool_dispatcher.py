@@ -1,4 +1,5 @@
 import json
+import logging 
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,9 @@ from hub.tools.developer.search_docs import search_technical_docs
 from hub.tools.student.review_quiz import generate_review_quiz, get_learning_summary
 from hub.tools.admin.email_reader import read_and_summarize_emails
 from hub.tools.admin.email_drafter import draft_email_reply, create_task_from_email
+from hub.tools.planner.daily_planner import generate_daily_plan, get_todays_plan
+
+logger = logging.getLogger(__name__)
 
 class ToolDispatcher:
     def __init__(self, db: AsyncSession, user_id: str):
@@ -32,10 +36,14 @@ class ToolDispatcher:
             "read_emails":              self._read_emails,
             "draft_email_reply":        self._draft_email_reply,
             "create_tasks_from_email":  self._create_tasks_from_email,
+            "generate_daily_plan":      self._generate_daily_plan,
+            "get_todays_plan":          self._get_todays_plan,
         }
+        
         handler = handlers.get(tool_name)
         if not handler:
             return json.dumps({"error": f"Unknown tool: {tool_name}"})
+            
         try:
             result = await handler(args)
             return json.dumps(result)
@@ -141,7 +149,7 @@ class ToolDispatcher:
             user_id=self.user_id,
             domain=args.get("domain"),
             num_questions=args.get("num_questions", 5),
-    )
+        )
 
     async def _get_learning_summary(self, args: dict) -> dict:
         return await get_learning_summary(
@@ -149,7 +157,7 @@ class ToolDispatcher:
             user_id=self.user_id,
             domain=args.get("domain"),
             days=args.get("days", 7),
-    )
+        )
 
     async def _execute_terminal_command(self, args: dict) -> dict:
         from hub.api.websocket import send_command_to_spoke
@@ -159,7 +167,7 @@ class ToolDispatcher:
             working_dir=args.get("working_dir"),
             timeout_s=args.get("timeout_s", 30),
             require_confirm=args.get("require_confirm", False),
-    )
+        )
 
     async def _web_search_and_summarize(self, args: dict) -> dict:
         return {"status": "pending", "message": "Web search coming in Task 8"}
@@ -186,4 +194,19 @@ class ToolDispatcher:
             email_id=args["email_id"],
             user_id=self.user_id,
             db=self.db,
+        )
+
+    async def _generate_daily_plan(self, args: dict) -> dict:
+        return await generate_daily_plan(
+            db=self.db,
+            user_id=str(self.user_id),
+            energy_level=args.get("energy_level", "normal"),
+            focus_preference=args.get("focus_preference"),
+            custom_instructions=args.get("custom_instructions"),
+        )
+        
+    async def _get_todays_plan(self, args: dict) -> dict:
+        return await get_todays_plan(
+            db=self.db,
+            user_id=str(self.user_id),
         )

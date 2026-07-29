@@ -272,9 +272,17 @@ async def telegram_webhook(
             )
             return {"ok": True}
 
-        await telegram_app.bot.send_chat_action(
-            chat_id=chat_id, action="typing"
-        )
+        # --- THE FIX: Safely attempt to send the typing indicator ---
+        try:
+            from telegram.error import TimedOut, NetworkError
+            await telegram_app.bot.send_chat_action(
+                chat_id=chat_id, action="typing"
+            )
+        except (TimedOut, NetworkError) as e:
+            logger.warning(f"Skipping typing indicator due to network timeout: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to send typing indicator: {e}")
+        # -----------------------------------------------------------
 
         try:
             session_id = await get_session_id_for_chat(chat_id)
